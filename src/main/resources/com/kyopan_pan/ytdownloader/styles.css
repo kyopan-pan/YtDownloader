@@ -1,0 +1,109 @@
+.app {
+    -fx-background-color: linear-gradient(to bottom right, #0f172a, #111827);
+}
+
+.input-row {
+    -fx-alignment: center;
+    -fx-padding: 4 0 0 0;
+}
+
+.url-input {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-insets: 0;
+    -fx-background-radius: 14;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+    -fx-border-radius: 14;
+    -fx-text-fill: #e2e8f0;
+    -fx-prompt-text-fill: #94a3b8;
+    -fx-font-size: 14px;
+    -fx-padding: 12 14 12 14;
+}
+
+.url-input:focused {
+    -fx-border-color: #38bdf8;
+    -fx-background-color: rgba(56, 189, 248, 0.08);
+    -fx-effect: dropshadow(gaussian, rgba(56, 189, 248, 0.38), 14, 0.45, 0, 8);
+}
+
+.download-btn {
+    -fx-background-color: linear-gradient(135deg, #4cc9f0, #0ea5e9);
+    -fx-background-radius: 14;
+    -fx-padding: 12;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(76, 201, 240, 0.35), 14, 0.45, 0, 6);
+}
+
+.download-btn:hover {
+    -fx-background-color: linear-gradient(135deg, #67e8f9, #38bdf8);
+}
+
+.download-btn:pressed {
+    -fx-background-color: linear-gradient(135deg, #0891b2, #0284c7);
+}
+
+.download-btn.busy {
+    -fx-opacity: 0.75;
+}
+
+.download-btn.success {
+    -fx-background-color: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.download-btn.error {
+    -fx-background-color: linear-gradient(135deg, #f43f5e, #e11d48);
+}
+
+.download-icon {
+    -fx-fill: white;
+}
+
+.button-spinner {
+    -fx-progress-color: white;
+}
+
+.button-spinner > .spinner,
+.button-spinner > .determinate-indicator {
+    -fx-background-color: transparent;
+}
+
+.section-title {
+    -fx-text-fill: #e2e8f0;
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
+    -fx-padding: 6 0 0 2;
+    -fx-opacity: 0.9;
+}
+
+.downloads-list {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-background-insets: 0;
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(255, 255, 255, 0.06);
+    -fx-border-radius: 12;
+    -fx-padding: 8;
+}
+
+.downloads-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e5e7eb;
+    -fx-padding: 10 12;
+    -fx-font-size: 13px;
+}
+
+.downloads-list .list-cell:filled:hover {
+    -fx-background-color: rgba(56, 189, 248, 0.1);
+}
+
+.downloads-list .list-cell:filled:selected {
+    -fx-background-color: rgba(56, 189, 248, 0.18);
+    -fx-text-fill: white;
+}
+
+.downloads-list .scroll-bar:vertical {
+    -fx-background-color: transparent;
+}
+
+.downloads-list .scroll-bar:vertical .thumb {
+    -fx-background-color: rgba(255, 255, 255, 0.25);
+    -fx-background-radius: 8;
+}

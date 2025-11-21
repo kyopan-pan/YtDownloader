@@ -8,9 +8,11 @@ import javafx.scene.control.*;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.scene.shape.SVGPath;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -39,21 +41,38 @@ public class HelloApplication extends Application {
 
         TextField urlInput = new TextField();
         urlInput.setPromptText("YouTube URL...");
+        urlInput.getStyleClass().add("url-input");
 
-        Button downloadBtn = new Button("Download");
-        downloadBtn.setMaxWidth(Double.MAX_VALUE);
+        SVGPath downloadIcon = buildDownloadIcon();
+
+        Button downloadBtn = new Button();
+        downloadBtn.setAccessibleText("Download");
+        downloadBtn.setGraphic(downloadIcon);
+        downloadBtn.getStyleClass().add("download-btn");
+        downloadBtn.setPrefWidth(56);
+        downloadBtn.setPrefHeight(48);
+        downloadBtn.setMinHeight(48);
+
+        HBox inputRow = new HBox(12, urlInput, downloadBtn);
+        inputRow.getStyleClass().add("input-row");
+        HBox.setHgrow(urlInput, Priority.ALWAYS);
 
         fileListView = new ListView<>();
+        fileListView.getStyleClass().add("downloads-list");
         updateFileList();
 
-        VBox root = new VBox(10, urlInput, downloadBtn, new Label("Downloads:"), fileListView);
-        root.setPadding(new Insets(10));
+        Label downloadsLabel = new Label("Downloads");
+        downloadsLabel.getStyleClass().add("section-title");
+
+        VBox root = new VBox(14, inputRow, downloadsLabel, fileListView);
+        root.getStyleClass().add("app");
+        root.setPadding(new Insets(16));
         VBox.setVgrow(fileListView, Priority.ALWAYS);
 
         downloadBtn.setOnAction(e -> {
             String url = urlInput.getText();
             if (url != null && !url.isEmpty()) {
-                downloadVideo(url, downloadBtn);
+                downloadVideo(url, downloadBtn, downloadIcon);
                 urlInput.clear();
             }
         });
@@ -78,16 +97,26 @@ public class HelloApplication extends Application {
             }
         });
 
-        Scene scene = new Scene(root, 300, 600);
+        Scene scene = new Scene(root, 360, 600);
+        scene.getStylesheets().add(getClass().getResource("styles.css").toExternalForm());
         primaryStage.setTitle("YT Downloader");
         primaryStage.setScene(scene);
         primaryStage.setAlwaysOnTop(true);
         primaryStage.show();
     }
 
-    private void downloadVideo(String url, Button btn) {
+    private void downloadVideo(String url, Button btn, SVGPath downloadIcon) {
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setPrefSize(18, 18);
+        spinner.setMaxSize(18, 18);
+        spinner.getStyleClass().add("button-spinner");
+
         btn.setDisable(true);
-        btn.setText("Downloading...");
+        btn.setGraphic(spinner);
+        btn.getStyleClass().removeAll("success", "error");
+        if (!btn.getStyleClass().contains("busy")) {
+            btn.getStyleClass().add("busy");
+        }
 
         new Thread(() -> {
             try {
@@ -121,18 +150,27 @@ public class HelloApplication extends Application {
                 int exitCode = process.waitFor();
 
                 Platform.runLater(() -> {
+                    btn.getStyleClass().remove("busy");
                     if (exitCode == 0) {
-                        btn.setText("Success!");
+                        btn.getStyleClass().remove("error");
+                        if (!btn.getStyleClass().contains("success")) {
+                            btn.getStyleClass().add("success");
+                        }
                         updateFileList(); // リスト更新
                     } else {
-                        btn.setText("Error: " + exitCode);
+                        btn.getStyleClass().remove("success");
+                        if (!btn.getStyleClass().contains("error")) {
+                            btn.getStyleClass().add("error");
+                        }
                     }
                     // ボタン復帰処理
+                    btn.setGraphic(downloadIcon);
                     new Thread(() -> {
                         try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
                         Platform.runLater(() -> {
                             btn.setDisable(false);
-                            btn.setText("Download");
+                            btn.getStyleClass().removeAll("success", "error");
+                            btn.setGraphic(downloadIcon);
                         });
                     }).start();
                 });
@@ -140,7 +178,11 @@ public class HelloApplication extends Application {
             } catch (Exception ex) {
                 ex.printStackTrace();
                 Platform.runLater(() -> {
-                    btn.setText("Error");
+                    btn.getStyleClass().remove("busy");
+                    if (!btn.getStyleClass().contains("error")) {
+                        btn.getStyleClass().add("error");
+                    }
+                    btn.setGraphic(downloadIcon);
                     btn.setDisable(false);
                 });
             }
@@ -163,5 +205,14 @@ public class HelloApplication extends Application {
 
     public static void main(String[] args) {
         launch();
+    }
+
+    private SVGPath buildDownloadIcon() {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M12 2v10h4l-6 6-6-6h4V2h4zm-8 18v2h16v-2H4z");
+        icon.getStyleClass().add("download-icon");
+        icon.setScaleX(1.05);
+        icon.setScaleY(1.05);
+        return icon;
     }
 }
