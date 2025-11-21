@@ -6,6 +6,7 @@ import javafx.scene.control.ProgressIndicator;
 import javafx.scene.shape.SVGPath;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 
 public class DownloadExecutor {
@@ -24,19 +25,21 @@ public class DownloadExecutor {
 
     private void runDownload(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
         try {
+            // 変更: Configから動的パスを取得し、--ffmpeg-location を追加
             ProcessBuilder pb = new ProcessBuilder(
-                    DownloadConfig.YT_DLP_PATH,
+                    DownloadConfig.getYtDlpPath(),
                     "--no-playlist",
                     "-f", "bv+ba/b",
                     "--merge-output-format", "mp4",
+                    "--ffmpeg-location", DownloadConfig.getFfmpegPath(), // ここが重要
                     "-o", DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s",
                     url
             );
 
-            // ffmpeg を認識させるために PATH を補強
+            // PATH環境変数の操作は不要になったため削除しても良いですが、念のため残すなら以下のように
+            // 自分の管理するBIN_DIRを含めるようにします
             String currentPath = System.getenv("PATH");
-            if (currentPath == null) currentPath = "";
-            pb.environment().put("PATH", currentPath + ":/usr/local/bin:/opt/homebrew/bin");
+            pb.environment().put("PATH", DownloadConfig.BIN_DIR + File.pathSeparator + (currentPath != null ? currentPath : ""));
 
             pb.redirectErrorStream(true);
             Process process = pb.start();

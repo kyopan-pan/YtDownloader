@@ -29,6 +29,11 @@ public class HelloApplication extends Application {
     public void start(Stage primaryStage) {
         downloadsManager.ensureDownloadDirectory();
 
+        // === 追加部分: バイナリの準備 ===
+        // UIブロックを避けるため別スレッドで実行するか、
+        // 本来はスプラッシュスクリーン等で待機させるべきですが、簡易的にここで呼び出します
+        new Thread(() -> new DependencyManager().ensureBinaries()).start();
+
         TextField urlInput = new TextField();
         urlInput.setPromptText("YouTube URL...");
         urlInput.getStyleClass().add("url-input");
