@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -66,7 +67,7 @@ public class DownloadExecutor {
     private boolean runStandardDownload(String url) throws Exception {
         String outputTemplate = DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s";
         logStep("yt-dlpを通常モードで起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
-        long start = System.nanoTime();
+        long start = logProcessStart("yt-dlp（通常モード）");
 
         ProcessBuilder pb = new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
@@ -83,16 +84,15 @@ public class DownloadExecutor {
         Process process = pb.start();
         consumeStream(process.getInputStream(), true);
         int exitCode = process.waitFor();
-        logStep("yt-dlp（通常モード）終了。exit=" + exitCode + " / " + formatDuration(System.nanoTime() - start));
+        logProcessEnd("yt-dlp（通常モード）", start, exitCode);
         return exitCode == 0;
     }
 
     private boolean runAnimeThemesPipeline(String url) throws Exception {
-        logStep("AnimeThemesモード: ファイル名を取得します。");
-        String originalName = fetchFilename(url);
-        String mp4Name = toMp4Name(originalName);
+        logStep("AnimeThemesモード: yt-dlpへのファイル名問い合わせをスキップします。");
+        String mp4Name = animeThemesFilenameFromTitle(url);
         Path outputPath = Paths.get(DownloadConfig.DOWNLOAD_DIR, mp4Name);
-        logStep("AnimeThemesモード: 取得した名前=" + originalName + " / 出力ファイル=" + outputPath);
+        logStep("AnimeThemesモード: 即時生成した出力ファイル=" + outputPath);
 
         // 1. yt-dlp: 標準出力(-)にデータを流す設定
         ProcessBuilder ytDlp = new ProcessBuilder(
@@ -136,11 +136,11 @@ public class DownloadExecutor {
 
         // パイプラインの実行（ダウンロードと変換を同時に行うため高速）
         logStep("AnimeThemesモード: yt-dlp→ffmpegパイプラインを起動します。");
-        long ytStart = System.nanoTime();
-        long ffStart = ytStart;
         List<Process> pipeline = ProcessBuilder.startPipeline(List.of(ytDlp, ffmpeg));
         Process ytProcess = pipeline.get(0);
         Process ffmpegProcess = pipeline.get(1);
+        long ytStart = logProcessStart("yt-dlp（AnimeThemes）");
+        long ffStart = logProcessStart("ffmpeg（AnimeThemes）");
 
         // ログ出力のハンドリング
         // yt-dlpの進捗は標準エラーに出るため、それを監視
@@ -149,15 +149,145 @@ public class DownloadExecutor {
         Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false);
 
         int ytExit = ytProcess.waitFor();
-        logStep("yt-dlp（AnimeThemes）終了。exit=" + ytExit + " / " + formatDuration(System.nanoTime() - ytStart));
+        logProcessEnd("yt-dlp（AnimeThemes）", ytStart, ytExit);
         int ffExit = ffmpegProcess.waitFor();
-        logStep("ffmpeg（AnimeThemes）終了。exit=" + ffExit + " / " + formatDuration(System.nanoTime() - ffStart));
+        logProcessEnd("ffmpeg（AnimeThemes）", ffStart, ffExit);
 
         ytLogs.join();
         ffLogs.join();
 
         // 両方のプロセスが正常終了(0)していれば成功
         return ytExit == 0 && ffExit == 0;
+    }
+
+    private String animeThemesFilenameFromTitle(String url) {
+        String fallback = quickAnimeThemesFilename(url);
+        String title = fetchTitleWithCurl(url);
+        if (title == null || title.isBlank()) {
+            logStep("title取得に失敗または空。URL由来の一時名を使用します: " + fallback);
+            return fallback;
+        }
+        String normalized = title.replaceAll("\\s*\\|.*", "").trim();
+        if (normalized.isBlank()) {
+            normalized = title.trim();
+        }
+        String sanitized = normalized
+                .replaceAll("[\\\\/:*?\"<>|]", "_")
+                .replaceAll("\\s+", "_");
+        if (sanitized.isBlank()) {
+            sanitized = "animethemes";
+        }
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        return sanitized + "-" + timestamp + ".mp4";
+    }
+
+    private String fetchTitleWithCurl(String url) {
+        logStep("curlでtitleタグ取得を試行中...");
+        long start = logProcessStart("curl（title取得）");
+        ProcessBuilder pb = new ProcessBuilder(
+                "curl",
+                "-Ls",
+                "-m", "5",
+                url
+        );
+        addBinDirToPath(pb);
+        pb.redirectErrorStream(true);
+        StringBuilder html = new StringBuilder();
+        int exitCode;
+        try {
+            Process process = pb.start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (html.length() < 12000) {
+                        html.append(line).append('\n');
+                    }
+                }
+            }
+            exitCode = process.waitFor();
+        } catch (Exception e) {
+            logStep("curlの実行に失敗: " + e.getMessage());
+            logProcessEnd("curl（title取得）", start, -1);
+            return null;
+        }
+        logProcessEnd("curl（title取得）", start, exitCode);
+        if (exitCode != 0) {
+            logStep("curlが非0終了(exit=" + exitCode + ")。");
+            return null;
+        }
+        String title = parseTitleFromHtml(html.toString());
+        if (title != null) {
+            logStep("curlでtitleを取得: " + title);
+        } else {
+            logStep("curlでtitleタグを検出できず。");
+        }
+        return title;
+    }
+
+    private String parseTitleFromHtml(String html) {
+        if (html == null || html.isBlank()) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile("(?is)<title[^>]*>(.*?)</title>").matcher(html);
+        if (matcher.find()) {
+            String title = matcher.group(1).trim();
+            if (title.isEmpty()) {
+                return null;
+            }
+            // 最低限のデコード（よくあるエンティティのみ）
+            return title
+                    .replace("&amp;", "&")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'");
+        }
+        return null;
+    }
+
+    private String quickAnimeThemesFilename(String url) {
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        try {
+            URI uri = new URI(url);
+            String path = Optional.ofNullable(uri.getPath()).orElse("");
+            String[] segments = path.split("/");
+            List<String> filtered = new ArrayList<>();
+            for (String segment : segments) {
+                if (segment == null) {
+                    continue;
+                }
+                String trimmed = segment.trim();
+                if (!trimmed.isEmpty()) {
+                    filtered.add(trimmed);
+                }
+            }
+
+            if (filtered.isEmpty()) {
+                return "animethemes-" + timestamp + ".mp4";
+            }
+
+            List<String> picked = new ArrayList<>();
+            for (int i = filtered.size() - 1; i >= 0 && picked.size() < 2; i--) {
+                String seg = filtered.get(i);
+                if (seg.equalsIgnoreCase("anime") && filtered.size() > 1) {
+                    continue;
+                }
+                picked.add(0, seg); // preserve original order
+            }
+
+            if (picked.isEmpty()) {
+                picked.add(filtered.get(filtered.size() - 1));
+            }
+
+            String base = String.join("-", picked);
+            String sanitized = base.replaceAll("[^a-zA-Z0-9-_\\.]", "_");
+            if (sanitized.isBlank()) {
+                sanitized = "animethemes";
+            }
+            return sanitized + "-" + timestamp + ".mp4";
+        } catch (Exception ignored) {
+            return "animethemes-" + timestamp + ".mp4";
+        }
     }
 
     private String fetchFilename(String url) throws Exception {
@@ -223,13 +353,6 @@ public class DownloadExecutor {
         } catch (Exception ignored) {
             return "video-" + timestamp + ".mp4";
         }
-    }
-
-    private String toMp4Name(String filename) {
-        String justName = Paths.get(filename).getFileName().toString();
-        int dot = justName.lastIndexOf('.');
-        String base = dot > 0 ? justName.substring(0, dot) : justName;
-        return base + ".mp4";
     }
 
     private void addBinDirToPath(ProcessBuilder pb) {
@@ -325,6 +448,16 @@ public class DownloadExecutor {
             return;
         }
         Platform.runLater(() -> progressConsumer.accept(update));
+    }
+
+    private long logProcessStart(String label) {
+        long start = System.nanoTime();
+        logStep(label + " を開始");
+        return start;
+    }
+
+    private void logProcessEnd(String label, long startNanos, int exitCode) {
+        logStep(label + " 終了。exit=" + exitCode + " / " + formatDuration(System.nanoTime() - startNanos));
     }
 
     public record ProgressUpdate(String message, double progress, boolean visible) {
