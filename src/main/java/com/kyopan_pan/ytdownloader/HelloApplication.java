@@ -2,6 +2,7 @@ package com.kyopan_pan.ytdownloader;
 
 import javafx.application.Application;
 import javafx.geometry.Insets;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.input.ClipboardContent;
@@ -11,6 +12,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 import java.io.File;
@@ -75,7 +77,7 @@ public class HelloApplication extends Application {
             }
         });
 
-        Scene scene = new Scene(root, 360, 600);
+        Scene scene = new Scene(root, 300, 1000);
         URL stylesheet = getClass().getResource("styles.css");
         if (stylesheet != null) {
             scene.getStylesheets().add(stylesheet.toExternalForm());
@@ -85,7 +87,17 @@ public class HelloApplication extends Application {
         primaryStage.setTitle("YT Downloader");
         primaryStage.setScene(scene);
         primaryStage.setAlwaysOnTop(true);
+        primaryStage.setOnShown(event -> snapWindowToRight(primaryStage));
         primaryStage.show();
+    }
+
+    private void snapWindowToRight(Stage stage) {
+        Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
+        double margin = 12;
+        double x = bounds.getMaxX() - stage.getWidth() - margin;
+        double y = bounds.getMinY() + margin;
+        stage.setX(x);
+        stage.setY(Math.max(bounds.getMinY(), y));
     }
 
     private Button buildDownloadButton(SVGPath downloadIcon) {
