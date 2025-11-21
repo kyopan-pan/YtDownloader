@@ -21,6 +21,11 @@ public class HelloApplication extends Application {
 
     private final DownloadsManager downloadsManager = new DownloadsManager();
     private DownloadExecutor downloadExecutor;
+    private TextField urlInput;
+    private Button downloadBtn;
+    private SVGPath downloadIcon;
+    private SVGPath stopIcon;
+    private SVGPath successIcon;
     private ListView<File> fileListView;
     private VBox progressBox;
     private Label progressLabel;
@@ -35,12 +40,15 @@ public class HelloApplication extends Application {
         // 本来はスプラッシュスクリーン等で待機させるべきですが、簡易的にここで呼び出します
         new Thread(() -> new DependencyManager().ensureBinaries()).start();
 
-        TextField urlInput = new TextField();
+        urlInput = new TextField();
         urlInput.setPromptText("YouTube URL...");
         urlInput.getStyleClass().add("url-input");
 
-        SVGPath downloadIcon = IconFactory.createDownloadIcon();
-        Button downloadBtn = buildDownloadButton(downloadIcon);
+        downloadIcon = IconFactory.createDownloadIcon();
+        stopIcon = IconFactory.createStopIcon();
+        successIcon = IconFactory.createSuccessIcon();
+
+        downloadBtn = buildDownloadButton(downloadIcon);
 
         HBox inputRow = new HBox(12, urlInput, downloadBtn);
         inputRow.getStyleClass().add("input-row");
@@ -60,7 +68,12 @@ public class HelloApplication extends Application {
         VBox.setVgrow(fileListView, Priority.ALWAYS);
 
         downloadExecutor = new DownloadExecutor(this::handleProgressUpdate);
-        downloadBtn.setOnAction(e -> handleDownload(urlInput, downloadBtn, downloadIcon));
+        downloadBtn.setOnAction(e -> handleDownload(urlInput));
+        urlInput.textProperty().addListener((obs, oldValue, newValue) -> {
+            if (!downloadExecutor.isDownloadActive()) {
+                resetDownloadButton();
+            }
+        });
 
         Scene scene = new Scene(root, 360, 600);
         URL stylesheet = getClass().getResource("styles.css");
@@ -118,12 +131,23 @@ public class HelloApplication extends Application {
         progressBox.getStyleClass().addAll("progress-box", "idle");
     }
 
-    private void handleDownload(TextField urlInput, Button downloadBtn, SVGPath downloadIcon) {
+    private void handleDownload(TextField urlInput) {
+        if (downloadExecutor.isDownloadActive()) {
+            downloadExecutor.stopDownload(downloadBtn, downloadIcon);
+            return;
+        }
         String url = urlInput.getText();
         if (url != null && !url.isEmpty()) {
-            downloadExecutor.download(url, downloadBtn, downloadIcon, this::refreshFileList);
+            downloadExecutor.download(url, downloadBtn, downloadIcon, stopIcon, successIcon, this::refreshFileList);
             urlInput.clear();
         }
+    }
+
+    private void resetDownloadButton() {
+        downloadBtn.setDisable(false);
+        downloadBtn.getStyleClass().removeAll("busy", "stop", "success", "error");
+        downloadBtn.setGraphic(downloadIcon);
+        downloadBtn.setAccessibleText("Download");
     }
 
     private void handleDelete(File target) {

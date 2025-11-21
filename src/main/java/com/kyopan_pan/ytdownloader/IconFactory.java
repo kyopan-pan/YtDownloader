@@ -13,6 +13,24 @@ public final class IconFactory {
         return icon;
     }
 
+    public static SVGPath createStopIcon() {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M6 6h12v12H6z");
+        icon.getStyleClass().add("stop-icon");
+        icon.setScaleX(1.05);
+        icon.setScaleY(1.05);
+        return icon;
+    }
+
+    public static SVGPath createSuccessIcon() {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M9 16.2l-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5L9 16.2z");
+        icon.getStyleClass().add("success-icon");
+        icon.setScaleX(1.05);
+        icon.setScaleY(1.05);
+        return icon;
+    }
+
     public static SVGPath createDeleteIcon() {
         SVGPath icon = new SVGPath();
         icon.setContent("M18.3 5.71a1 1 0 00-1.41 0L12 10.59 7.11 5.7A1 1 0 105.7 7.11L10.59 12l-4.9 4.89a1 1 0 101.41 1.41L12 13.41l4.89 4.9a1 1 0 001.41-1.41L13.41 12l4.9-4.89a1 1 0 000-1.4z");

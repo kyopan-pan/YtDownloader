@@ -25,9 +25,13 @@ public class DownloadExecutor {
     private static final String ANIME_THEMES_HOST = "animethemes.moe";
     private static final Pattern PERCENT_PATTERN = Pattern.compile("(\\d{1,3}(?:\\.\\d+)?)%");
     private final Consumer<ProgressUpdate> progressConsumer;
+    private final Object processLock = new Object();
+    private final List<Process> activeProcesses = new ArrayList<>();
     private volatile long downloadStartNanos;
     private volatile boolean downloadActive;
     private volatile boolean progressStarted;
+    private volatile boolean cancelRequested;
+    private volatile Thread workerThread;
     private Thread loadingElapsedThread;
 
     public DownloadExecutor() {
@@ -38,24 +42,44 @@ public class DownloadExecutor {
         this.progressConsumer = progressConsumer;
     }
 
-    public void download(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
+    public void download(String url, Button btn, SVGPath downloadIcon, SVGPath stopIcon, SVGPath successIcon, Runnable onSuccess) {
         logStep("URL入力を受信: " + url);
-        ProgressIndicator spinner = buildSpinner();
-        btn.setDisable(true);
-        btn.setGraphic(spinner);
-        btn.getStyleClass().removeAll("success", "error");
-        if (!btn.getStyleClass().contains("busy")) {
-            btn.getStyleClass().add("busy");
-        }
+        prepareStopButton(btn, stopIcon);
         markDownloadStart();
         sendProgress(buildLoadingProgress());
         startLoadingElapsedTicker();
 
-        new Thread(() -> runDownload(url, btn, downloadIcon, onSuccess)).start();
+        Thread thread = new Thread(() -> runDownload(url, btn, downloadIcon, successIcon, onSuccess));
+        workerThread = thread;
+        thread.start();
     }
 
-    private void runDownload(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
+    public boolean isDownloadActive() {
+        return downloadActive;
+    }
+
+    public void stopDownload(Button btn, SVGPath downloadIcon) {
+        if (!downloadActive) {
+            return;
+        }
+        logStep("停止リクエストを受信。子プロセスを終了します。");
+        cancelRequested = true;
+        btn.setDisable(true);
+        if (!btn.getStyleClass().contains("busy")) {
+            btn.getStyleClass().add("busy");
+        }
+        btn.setGraphic(buildSpinner());
+        sendProgress(new ProgressUpdate("キャンセル中...", ProgressIndicator.INDETERMINATE_PROGRESS, true));
+        destroyActiveProcesses();
+        Thread worker = workerThread;
+        if (worker != null) {
+            worker.interrupt();
+        }
+    }
+
+    private void runDownload(String url, Button btn, SVGPath downloadIcon, SVGPath successIcon, Runnable onSuccess) {
         try {
+            workerThread = Thread.currentThread();
             logStep("バックグラウンド処理を開始。URL判定中...");
             boolean animeThemes = isAnimeThemesUrl(url);
             logStep(animeThemes ? "AnimeThemes URLと判定。専用パイプラインを使用します。" : "通常のyt-dlpダウンロードを使用します。");
@@ -63,10 +87,20 @@ public class DownloadExecutor {
             boolean success = animeThemes
                     ? runAnimeThemesPipeline(url)
                     : runStandardDownload(url);
-            Platform.runLater(() -> handleFinish(success, btn, downloadIcon, onSuccess));
+            if (cancelRequested) {
+                Platform.runLater(() -> handleCancelled(btn, downloadIcon));
+                return;
+            }
+            Platform.runLater(() -> handleFinish(success, btn, downloadIcon, successIcon, onSuccess));
         } catch (Exception ex) {
             ex.printStackTrace();
-            Platform.runLater(() -> handleFinish(false, btn, downloadIcon, null));
+            if (cancelRequested) {
+                Platform.runLater(() -> handleCancelled(btn, downloadIcon));
+            } else {
+                Platform.runLater(() -> handleFinish(false, btn, downloadIcon, successIcon, null));
+            }
+        } finally {
+            workerThread = null;
         }
     }
 
@@ -88,10 +122,15 @@ public class DownloadExecutor {
         addBinDirToPath(pb);
         pb.redirectErrorStream(true);
         Process process = pb.start();
-        consumeStream(process.getInputStream(), true);
-        int exitCode = process.waitFor();
-        logProcessEnd("yt-dlp（通常モード）", start, exitCode);
-        return exitCode == 0;
+        registerProcess(process);
+        try {
+            consumeStream(process.getInputStream(), true);
+            int exitCode = waitForProcess(process);
+            logProcessEnd("yt-dlp（通常モード）", start, exitCode);
+            return exitCode == 0 && !cancelRequested;
+        } finally {
+            unregisterProcess(process);
+        }
     }
 
     private boolean runAnimeThemesPipeline(String url) throws Exception {
@@ -145,6 +184,8 @@ public class DownloadExecutor {
         List<Process> pipeline = ProcessBuilder.startPipeline(List.of(ytDlp, ffmpeg));
         Process ytProcess = pipeline.get(0);
         Process ffmpegProcess = pipeline.get(1);
+        registerProcess(ytProcess);
+        registerProcess(ffmpegProcess);
         long ytStart = logProcessStart("yt-dlp（AnimeThemes）");
         long ffStart = logProcessStart("ffmpeg（AnimeThemes）");
 
@@ -154,16 +195,23 @@ public class DownloadExecutor {
         // ffmpegのエラーログも監視
         Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false);
 
-        int ytExit = ytProcess.waitFor();
-        logProcessEnd("yt-dlp（AnimeThemes）", ytStart, ytExit);
-        int ffExit = ffmpegProcess.waitFor();
-        logProcessEnd("ffmpeg（AnimeThemes）", ffStart, ffExit);
+        int ytExit;
+        int ffExit;
+        try {
+            ytExit = waitForProcess(ytProcess);
+            logProcessEnd("yt-dlp（AnimeThemes）", ytStart, ytExit);
+            ffExit = waitForProcess(ffmpegProcess);
+            logProcessEnd("ffmpeg（AnimeThemes）", ffStart, ffExit);
+        } finally {
+            unregisterProcess(ytProcess);
+            unregisterProcess(ffmpegProcess);
+        }
 
         ytLogs.join();
         ffLogs.join();
 
         // 両方のプロセスが正常終了(0)していれば成功
-        return ytExit == 0 && ffExit == 0;
+        return ytExit == 0 && ffExit == 0 && !cancelRequested;
     }
 
     private String animeThemesFilenameFromTitle(String url) {
@@ -296,71 +344,6 @@ public class DownloadExecutor {
         }
     }
 
-    private String fetchFilename(String url) throws Exception {
-        logStep("ファイル名を yt-dlp --get-filename で取得中...");
-        long start = System.nanoTime();
-        ProcessBuilder pb = new ProcessBuilder(
-                DownloadConfig.getYtDlpPath(),
-                "--no-playlist",
-                "-f", "bv+ba/b",
-                "-o", "%(title)s.%(ext)s",
-                "--get-filename",
-                url
-        );
-        addBinDirToPath(pb);
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-        List<String> lines = new ArrayList<>();
-        String name = null;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                lines.add(line);
-                String trimmed = line.trim();
-                if (looksLikeFilename(trimmed)) {
-                    name = trimmed;
-                } else if (name == null && !trimmed.isBlank() && !trimmed.startsWith("WARNING")) {
-                    // pick the first non-warning non-empty line as fallback candidate
-                    name = trimmed;
-                }
-            }
-        }
-        int exitCode = process.waitFor();
-        if (exitCode != 0 || name == null || name.isBlank()) {
-            logStep("ファイル名の取得に失敗。fallback名を生成します。(exit=" + exitCode + ")");
-            System.err.println("Failed to resolve filename from yt-dlp (exit=" + exitCode + "). Output:\n" + String.join("\n", lines));
-            return fallbackFilename(url);
-        }
-        logStep("ファイル名の取得に成功: " + name);
-        logStep("ファイル名取得の所要時間: " + formatDuration(System.nanoTime() - start));
-        return name;
-    }
-
-    private boolean looksLikeFilename(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        String trimmed = value.trim();
-        if (trimmed.startsWith("WARNING") || trimmed.startsWith("[") || trimmed.contains("warning:")) {
-            return false;
-        }
-        return trimmed.matches("(?i).+\\.(mp4|mkv|webm|m4a|mp3|wav|flac|opus|avi|mov|wmv)$");
-    }
-
-    private String fallbackFilename(String url) {
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        try {
-            URI uri = new URI(url);
-            String hostPart = Optional.ofNullable(uri.getHost()).orElse("video");
-            String path = Optional.ofNullable(uri.getPath()).orElse("");
-            String lastSegment = Paths.get(path).getFileName() != null ? Paths.get(path).getFileName().toString() : "clip";
-            String sanitized = (hostPart + "-" + lastSegment).replaceAll("[^a-zA-Z0-9-_\\.]", "_");
-            return sanitized + "-" + timestamp + ".mp4";
-        } catch (Exception ignored) {
-            return "video-" + timestamp + ".mp4";
-        }
-    }
-
     private void addBinDirToPath(ProcessBuilder pb) {
         String currentPath = System.getenv("PATH");
         logStep("PATHにbinディレクトリを追加: " + DownloadConfig.BIN_DIR);
@@ -371,13 +354,16 @@ public class DownloadExecutor {
         return url != null && url.toLowerCase().contains(ANIME_THEMES_HOST);
     }
 
-    private void handleFinish(boolean success, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
-        btn.getStyleClass().remove("busy");
+    private void handleFinish(boolean success, Button btn, SVGPath downloadIcon, SVGPath successIcon, Runnable onSuccess) {
+        btn.setDisable(false);
+        btn.getStyleClass().removeAll("busy", "stop");
         if (success) {
             btn.getStyleClass().remove("error");
             if (!btn.getStyleClass().contains("success")) {
                 btn.getStyleClass().add("success");
             }
+            btn.setGraphic(successIcon);
+            btn.setAccessibleText("Download succeeded");
             if (onSuccess != null) {
                 onSuccess.run();
             }
@@ -386,11 +372,32 @@ public class DownloadExecutor {
             if (!btn.getStyleClass().contains("error")) {
                 btn.getStyleClass().add("error");
             }
+            btn.setGraphic(downloadIcon);
+            btn.setAccessibleText("Download");
         }
         clearDownloadStart();
-        btn.setGraphic(downloadIcon);
-        resetButtonStateLater(btn, downloadIcon);
         sendProgress(ProgressUpdate.hidden());
+    }
+
+    private void handleCancelled(Button btn, SVGPath downloadIcon) {
+        logStep("ダウンロードをキャンセルしました。");
+        btn.setDisable(false);
+        btn.getStyleClass().removeAll("busy", "stop", "success", "error");
+        btn.setGraphic(downloadIcon);
+        btn.setAccessibleText("Download");
+        clearDownloadStart();
+        sendProgress(ProgressUpdate.hidden());
+    }
+
+    private void prepareStopButton(Button btn, SVGPath stopIcon) {
+        btn.setDisable(false);
+        btn.getStyleClass().removeAll("success", "error");
+        if (!btn.getStyleClass().contains("stop")) {
+            btn.getStyleClass().add("stop");
+        }
+        btn.getStyleClass().remove("busy");
+        btn.setGraphic(stopIcon);
+        btn.setAccessibleText("Stop download");
     }
 
     private ProgressIndicator buildSpinner() {
@@ -401,18 +408,46 @@ public class DownloadExecutor {
         return spinner;
     }
 
-    private void resetButtonStateLater(Button btn, SVGPath downloadIcon) {
-        new Thread(() -> {
+    private void registerProcess(Process process) {
+        synchronized (processLock) {
+            activeProcesses.add(process);
+        }
+    }
+
+    private void unregisterProcess(Process process) {
+        synchronized (processLock) {
+            activeProcesses.remove(process);
+        }
+    }
+
+    private void destroyActiveProcesses() {
+        List<Process> snapshot;
+        synchronized (processLock) {
+            snapshot = new ArrayList<>(activeProcesses);
+        }
+        for (Process process : snapshot) {
             try {
-                Thread.sleep(2000);
-            } catch (InterruptedException ignored) {
+                process.destroy();
+            } catch (Exception ignored) {
             }
-            Platform.runLater(() -> {
-                btn.setDisable(false);
-                btn.getStyleClass().removeAll("success", "error");
-                btn.setGraphic(downloadIcon);
-            });
-        }).start();
+        }
+        for (Process process : snapshot) {
+            try {
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private int waitForProcess(Process process) {
+        try {
+            return process.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return -1;
+        }
     }
 
     private Thread consumeAsync(InputStream stream, boolean parseProgress) {
@@ -473,17 +508,9 @@ public class DownloadExecutor {
             return progress < 0;
         }
 
-        public static ProgressUpdate infoLoading() {
-            return infoLoading(null);
-        }
-
         public static ProgressUpdate infoLoading(String elapsed) {
             String elapsedPart = (elapsed == null || elapsed.isBlank()) ? "" : String.format(" (経過: %s)", elapsed);
             return new ProgressUpdate("動画読み込み中..." + elapsedPart, ProgressIndicator.INDETERMINATE_PROGRESS, true);
-        }
-
-        public static ProgressUpdate downloading(double percent) {
-            return downloading(percent, null);
         }
 
         public static ProgressUpdate downloading(double percent, String elapsed) {
@@ -514,12 +541,14 @@ public class DownloadExecutor {
         downloadStartNanos = System.nanoTime();
         downloadActive = true;
         progressStarted = false;
+        cancelRequested = false;
     }
 
     private void clearDownloadStart() {
         downloadStartNanos = 0;
         downloadActive = false;
         progressStarted = false;
+        cancelRequested = false;
         Thread ticker = loadingElapsedThread;
         if (ticker != null) {
             ticker.interrupt();

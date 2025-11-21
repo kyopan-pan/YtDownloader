@@ -83,11 +83,32 @@
     -fx-background-color: linear-gradient(to bottom right, #22c55e, #16a34a);
 }
 
+.download-btn.stop {
+    -fx-background-color: linear-gradient(to bottom right, #ef4444, #dc2626);
+    -fx-effect: dropshadow(gaussian, rgba(239, 68, 68, 0.35), 14, 0.45, 0, 6);
+}
+
+.download-btn.stop:hover {
+    -fx-background-color: linear-gradient(to bottom right, #f87171, #ef4444);
+}
+
+.download-btn.stop:pressed {
+    -fx-background-color: linear-gradient(to bottom right, #b91c1c, #991b1b);
+}
+
 .download-btn.error {
     -fx-background-color: linear-gradient(to bottom right, #f43f5e, #e11d48);
 }
 
 .download-icon {
+    -fx-fill: white;
+}
+
+.stop-icon {
+    -fx-fill: white;
+}
+
+.success-icon {
     -fx-fill: white;
 }
 
