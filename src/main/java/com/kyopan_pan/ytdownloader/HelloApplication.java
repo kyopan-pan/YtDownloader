@@ -2,20 +2,22 @@ package com.kyopan_pan.ytdownloader;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
-import javafx.scene.control.Menu;
-import javafx.scene.control.MenuBar;
-import javafx.scene.control.MenuItem;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuBar;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
@@ -27,6 +29,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
@@ -52,6 +55,9 @@ public class HelloApplication extends Application {
     private VBox progressBox;
     private Label progressLabel;
     private ProgressBar progressBar;
+    private Stage logStage;
+    private ListView<String> logListView;
+    private String stylesheetUrl;
 
     @Override
     public void start(Stage primaryStage) {
@@ -108,7 +114,8 @@ public class HelloApplication extends Application {
         Scene scene = new Scene(root, settings.getWindowWidth(), settings.getWindowHeight());
         URL stylesheet = getClass().getResource("styles.css");
         if (stylesheet != null) {
-            scene.getStylesheets().add(stylesheet.toExternalForm());
+            stylesheetUrl = stylesheet.toExternalForm();
+            scene.getStylesheets().add(stylesheetUrl);
         } else {
             System.err.println("styles.css not found on classpath; skipping stylesheet load.");
         }
@@ -154,6 +161,10 @@ public class HelloApplication extends Application {
         settingsItem.setAccelerator(new KeyCodeCombination(KeyCode.COMMA, KeyCombination.META_DOWN));
         settingsItem.setOnAction(event -> openSettingsDialog());
 
+        MenuItem logsItem = new MenuItem("ログ...");
+        logsItem.setAccelerator(new KeyCodeCombination(KeyCode.L, KeyCombination.META_DOWN));
+        logsItem.setOnAction(event -> openLogWindow());
+
         MenuItem quitItem = new MenuItem("終了");
         quitItem.setAccelerator(new KeyCodeCombination(KeyCode.Q, KeyCombination.META_DOWN));
         quitItem.setOnAction(event -> {
@@ -161,7 +172,7 @@ public class HelloApplication extends Application {
             Platform.exit();
         });
 
-        appMenu.getItems().addAll(settingsItem, quitItem);
+        appMenu.getItems().addAll(settingsItem, logsItem, new SeparatorMenuItem(), quitItem);
         menuBar.getMenus().add(appMenu);
         return menuBar;
     }
@@ -410,5 +421,52 @@ public class HelloApplication extends Application {
         });
         updater.setDaemon(true);
         updater.start();
+    }
+
+    private void openLogWindow() {
+        if (logStage == null) {
+            logListView = new ListView<>();
+            logListView.getStyleClass().add("log-list");
+            logListView.setItems(AppLogger.getLogs());
+            ScrollUtil.disableHorizontalScroll(logListView);
+
+            AppLogger.getLogs().addListener((ListChangeListener<String>) change -> {
+                if (logListView != null && !AppLogger.getLogs().isEmpty()) {
+                    logListView.scrollTo(AppLogger.getLogs().size() - 1);
+                }
+            });
+
+            Label header = new Label("ログ");
+            header.getStyleClass().add("log-header");
+            Label subtitle = new Label("アプリを終了するとログはクリアされます。");
+            subtitle.getStyleClass().add("log-subtitle");
+
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            Button clearBtn = new Button("表示をクリア");
+            clearBtn.getStyleClass().add("log-clear-btn");
+            clearBtn.setOnAction(event -> AppLogger.clear());
+
+            HBox actionRow = new HBox(10, subtitle, spacer, clearBtn);
+            actionRow.setAlignment(Pos.CENTER_LEFT);
+
+            VBox root = new VBox(10, header, logListView, actionRow);
+            root.getStyleClass().add("log-root");
+            root.setPadding(new Insets(12));
+            VBox.setVgrow(logListView, Priority.ALWAYS);
+
+            Scene logScene = new Scene(root, 760, 460);
+            if (stylesheetUrl != null) {
+                logScene.getStylesheets().add(stylesheetUrl);
+            }
+
+            logStage = new Stage();
+            logStage.setTitle("ログ");
+            logStage.initOwner(primaryStage);
+            logStage.setScene(logScene);
+        }
+        logStage.show();
+        logStage.toFront();
     }
 }

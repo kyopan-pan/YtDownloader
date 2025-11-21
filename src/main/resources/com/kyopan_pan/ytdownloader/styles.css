@@ -199,6 +199,60 @@
     -fx-background-radius: 8;
 }
 
+.log-root {
+    -fx-background-color: linear-gradient(to bottom right, #0b1120, #0f172a);
+}
+
+.log-header {
+    -fx-text-fill: #e2e8f0;
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+    -fx-padding: 0 0 4 0;
+}
+
+.log-subtitle {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 12px;
+}
+
+.log-list {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-background-radius: 10;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 10;
+}
+
+.log-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e5e7eb;
+    -fx-font-family: "SFMono-Regular", "Consolas", "Menlo", "Monaco", "Courier New", monospace;
+    -fx-font-size: 12px;
+    -fx-padding: 8 10;
+}
+
+.log-list .list-cell:odd {
+    -fx-background-color: rgba(255, 255, 255, 0.02);
+}
+
+.log-clear-btn {
+    -fx-background-color: rgba(226, 232, 240, 0.08);
+    -fx-text-fill: #e2e8f0;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12;
+    -fx-cursor: hand;
+}
+
+.log-clear-btn:hover {
+    -fx-background-color: rgba(59, 130, 246, 0.18);
+    -fx-border-color: rgba(59, 130, 246, 0.32);
+}
+
+.log-clear-btn:pressed {
+    -fx-background-color: rgba(59, 130, 246, 0.26);
+}
+
 .downloads-list .scroll-bar:horizontal {
     -fx-opacity: 0;
     -fx-max-height: 0;

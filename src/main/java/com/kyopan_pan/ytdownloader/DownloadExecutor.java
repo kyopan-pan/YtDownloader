@@ -124,7 +124,7 @@ public class DownloadExecutor {
         Process process = pb.start();
         registerProcess(process);
         try {
-            consumeStream(process.getInputStream(), true);
+            consumeStream(process.getInputStream(), true, "yt-dlp");
             int exitCode = waitForProcess(process);
             logProcessEnd("yt-dlp（通常モード）", start, exitCode);
             return exitCode == 0 && !cancelRequested;
@@ -191,9 +191,9 @@ public class DownloadExecutor {
 
         // ログ出力のハンドリング
         // yt-dlpの進捗は標準エラーに出るため、それを監視
-        Thread ytLogs = consumeAsync(ytProcess.getErrorStream(), true);
+        Thread ytLogs = consumeAsync(ytProcess.getErrorStream(), true, "yt-dlp");
         // ffmpegのエラーログも監視
-        Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false);
+        Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false, "ffmpeg");
 
         int ytExit;
         int ffExit;
@@ -450,18 +450,19 @@ public class DownloadExecutor {
         }
     }
 
-    private Thread consumeAsync(InputStream stream, boolean parseProgress) {
-        Thread t = new Thread(() -> consumeStream(stream, parseProgress));
+    private Thread consumeAsync(InputStream stream, boolean parseProgress, String sourceLabel) {
+        Thread t = new Thread(() -> consumeStream(stream, parseProgress, sourceLabel));
         t.setDaemon(true);
         t.start();
         return t;
     }
 
-    private void consumeStream(InputStream stream, boolean parseProgress) {
+    private void consumeStream(InputStream stream, boolean parseProgress, String sourceLabel) {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                System.out.println(line);
+                String labeled = (sourceLabel == null || sourceLabel.isBlank()) ? line : "[" + sourceLabel + "] " + line;
+                AppLogger.log(labeled);
                 if (parseProgress) {
                     Double percent = extractPercent(line);
                     if (percent != null) {
@@ -525,7 +526,7 @@ public class DownloadExecutor {
     }
 
     private void logStep(String message) {
-        System.out.println("[DownloadExecutor] " + message);
+        AppLogger.log("[DownloadExecutor] " + message);
     }
 
     private ProgressUpdate buildDownloadingProgress(double percent) {

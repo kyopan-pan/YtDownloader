@@ -26,14 +26,14 @@ public class DependencyManager {
             // 1. yt-dlp の準備
             File ytDlp = new File(DownloadConfig.getYtDlpPath());
             if (!ytDlp.exists()) {
-                System.out.println("yt-dlp not found. Downloading...");
+                AppLogger.log("[DependencyManager] yt-dlp not found. Downloading...");
                 downloadYtDlp(ytDlp);
             }
 
             // 2. ffmpeg の準備 (リソースからコピー)
             File ffmpeg = new File(DownloadConfig.getFfmpegPath());
             if (!ffmpeg.exists()) {
-                System.out.println("ffmpeg not found. Extracting from resources...");
+                AppLogger.log("[DependencyManager] ffmpeg not found. Extracting from resources...");
                 copyFfmpegFromResources(ffmpeg);
             }
 
@@ -99,7 +99,7 @@ public class DependencyManager {
         try (InputStream in = URI.create(downloadUrl).toURL().openStream()) {
             Files.copy(in, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
             makeExecutable(destination.toPath());
-            System.out.println("yt-dlp ready.");
+            AppLogger.log("[DependencyManager] yt-dlp ready.");
         }
     }
 
@@ -111,7 +111,7 @@ public class DependencyManager {
             }
             Files.copy(in, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
             makeExecutable(destination.toPath());
-            System.out.println("ffmpeg ready.");
+            AppLogger.log("[DependencyManager] ffmpeg ready.");
         }
     }
 
