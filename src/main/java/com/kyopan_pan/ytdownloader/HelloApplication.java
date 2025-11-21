@@ -1,0 +1,167 @@
+package com.kyopan_pan.ytdownloader;
+
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
+import javafx.scene.input.TransferMode;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
+public class HelloApplication extends Application {
+
+    // Macの「ムービー」フォルダへのパス
+    private static final String DOWNLOAD_DIR = System.getProperty("user.home") + "/Movies/YtDlpDownloads";
+
+    // 【重要】手順1で調べたパスに書き換えてください (例: /opt/homebrew/bin/yt-dlp)
+    // ここが単に "yt-dlp" だとMacのGUIアプリからは動かないことが多いです
+    private static final String YT_DLP_PATH = "/usr/local/bin/yt-dlp";
+
+    private ListView<File> fileListView;
+
+    @Override
+    public void start(Stage primaryStage) {
+        new File(DOWNLOAD_DIR).mkdirs();
+
+        TextField urlInput = new TextField();
+        urlInput.setPromptText("YouTube URL...");
+
+        Button downloadBtn = new Button("Download");
+        downloadBtn.setMaxWidth(Double.MAX_VALUE);
+
+        fileListView = new ListView<>();
+        updateFileList();
+
+        VBox root = new VBox(10, urlInput, downloadBtn, new Label("Downloads:"), fileListView);
+        root.setPadding(new Insets(10));
+        VBox.setVgrow(fileListView, Priority.ALWAYS);
+
+        downloadBtn.setOnAction(e -> {
+            String url = urlInput.getText();
+            if (url != null && !url.isEmpty()) {
+                downloadVideo(url, downloadBtn);
+                urlInput.clear();
+            }
+        });
+
+        // VDMXへのドラッグ＆ドロップ用
+        fileListView.setOnDragDetected(event -> {
+            File selectedFile = fileListView.getSelectionModel().getSelectedItem();
+            if (selectedFile != null) {
+                Dragboard db = fileListView.startDragAndDrop(TransferMode.COPY);
+                ClipboardContent content = new ClipboardContent();
+                content.putFiles(Collections.singletonList(selectedFile));
+                db.setContent(content);
+                event.consume();
+            }
+        });
+
+        fileListView.setCellFactory(param -> new ListCell<>() {
+            @Override
+            protected void updateItem(File item, boolean empty) {
+                super.updateItem(item, empty);
+                setText((empty || item == null) ? null : item.getName());
+            }
+        });
+
+        Scene scene = new Scene(root, 300, 600);
+        primaryStage.setTitle("YT Downloader");
+        primaryStage.setScene(scene);
+        primaryStage.setAlwaysOnTop(true);
+        primaryStage.show();
+    }
+
+    private void downloadVideo(String url, Button btn) {
+        btn.setDisable(true);
+        btn.setText("Downloading...");
+
+        new Thread(() -> {
+            try {
+                // シェルスクリプトと同じオプションを指定
+                ProcessBuilder pb = new ProcessBuilder(
+                        YT_DLP_PATH,
+                        "--no-playlist",                // プレイリスト全体ではなく単体のみ
+                        "-f", "bv+ba/b",                // 最高画質+最高音質、なければbest
+                        "--merge-output-format", "mp4", // ffmpegを使ってmp4に結合
+                        "-o", DOWNLOAD_DIR + "/%(title)s.%(ext)s", // 出力ファイル名規則
+                        url
+                );
+
+                // 【重要】ffmpeg を認識させるためにPATHを通す
+                // MacのHomebrewやIntel Mac標準のパスを環境変数に追加します
+                String currentPath = System.getenv("PATH");
+                if (currentPath == null) currentPath = "";
+                pb.environment().put("PATH", currentPath + ":/usr/local/bin:/opt/homebrew/bin");
+
+                pb.redirectErrorStream(true);
+                Process process = pb.start();
+
+                // ログ出力（デバッグ用）
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println(line);
+                    }
+                }
+
+                int exitCode = process.waitFor();
+
+                Platform.runLater(() -> {
+                    if (exitCode == 0) {
+                        btn.setText("Success!");
+                        updateFileList(); // リスト更新
+                    } else {
+                        btn.setText("Error: " + exitCode);
+                    }
+                    // ボタン復帰処理
+                    new Thread(() -> {
+                        try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+                        Platform.runLater(() -> {
+                            btn.setDisable(false);
+                            btn.setText("Download");
+                        });
+                    }).start();
+                });
+
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                Platform.runLater(() -> {
+                    btn.setText("Error");
+                    btn.setDisable(false);
+                });
+            }
+        }).start();
+    }
+
+    private void updateFileList() {
+        try {
+            List<File> files = Files.list(Paths.get(DOWNLOAD_DIR))
+                    .filter(Files::isRegularFile)
+                    .map(Path::toFile)
+                    .filter(f -> f.getName().endsWith(".mp4"))
+                    .collect(Collectors.toList());
+            Collections.reverse(files);
+            fileListView.getItems().setAll(files);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        launch();
+    }
+}
