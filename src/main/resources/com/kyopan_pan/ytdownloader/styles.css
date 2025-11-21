@@ -259,3 +259,194 @@
     -fx-pref-height: 0;
     -fx-min-height: 0;
 }
+
+/* Dialogs */
+.glass-dialog {
+    -fx-background-color:
+        linear-gradient(to bottom right, rgba(15, 23, 42, 0.92), rgba(11, 15, 26, 0.94)),
+        rgba(255, 255, 255, 0.04);
+    -fx-background-insets: 0, 1;
+    -fx-background-radius: 16;
+    -fx-border-color: rgba(255, 255, 255, 0.06);
+    -fx-border-radius: 16;
+    -fx-padding: 18 18 10 18;
+}
+
+.glass-dialog .header-panel {
+    -fx-background-color: transparent;
+}
+
+.glass-dialog .button-bar .button {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-text-fill: #e2e8f0;
+    -fx-background-radius: 12;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+    -fx-border-radius: 12;
+    -fx-cursor: hand;
+    -fx-padding: 8 14;
+}
+
+.glass-dialog .button-bar .button:hover {
+    -fx-background-color: rgba(56, 189, 248, 0.18);
+    -fx-border-color: rgba(56, 189, 248, 0.35);
+}
+
+.glass-dialog .button-bar .button:pressed {
+    -fx-background-color: rgba(56, 189, 248, 0.26);
+}
+
+.dialog-content {
+    -fx-padding: 6 0 2 0;
+}
+
+.dialog-heading {
+    -fx-text-fill: #e2e8f0;
+    -fx-font-size: 16px;
+    -fx-font-weight: 800;
+    -fx-letter-spacing: 0.15px;
+}
+
+.dialog-subtitle {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 13px;
+    -fx-line-spacing: 2px;
+}
+
+.dialog-hero {
+    -fx-background-color: rgba(255, 255, 255, 0.03);
+    -fx-border-color: rgba(255, 255, 255, 0.06);
+    -fx-border-radius: 14;
+    -fx-background-radius: 14;
+    -fx-padding: 12 14;
+}
+
+.hero-icon {
+    -fx-min-width: 56;
+    -fx-min-height: 56;
+    -fx-max-width: 56;
+    -fx-max-height: 56;
+    -fx-alignment: center;
+    -fx-background-color: linear-gradient(to bottom right, #38bdf8, #0ea5e9);
+    -fx-background-radius: 14;
+    -fx-effect: dropshadow(gaussian, rgba(56, 189, 248, 0.35), 16, 0.45, 0, 8);
+}
+
+.hero-glyph {
+    -fx-text-fill: white;
+    -fx-font-weight: 800;
+    -fx-font-size: 14px;
+}
+
+.pill {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-text-fill: #e2e8f0;
+    -fx-padding: 4 10;
+    -fx-background-radius: 999;
+    -fx-border-radius: 999;
+    -fx-font-size: 11px;
+    -fx-font-weight: 800;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+}
+
+.pill-accent {
+    -fx-background-color: rgba(56, 189, 248, 0.14);
+    -fx-border-color: rgba(14, 165, 233, 0.45);
+    -fx-text-fill: #38bdf8;
+}
+
+.pill-warning {
+    -fx-background-color: rgba(236, 72, 153, 0.18);
+    -fx-border-color: rgba(236, 72, 153, 0.42);
+    -fx-text-fill: #f472b6;
+}
+
+.info-card {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-border-color: rgba(255, 255, 255, 0.07);
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 12 14;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 20, 0.18, 0, 8);
+}
+
+.info-title {
+    -fx-text-fill: #e2e8f0;
+    -fx-font-size: 13px;
+    -fx-font-weight: 800;
+}
+
+.muted-label {
+    -fx-text-fill: #94a3b8;
+    -fx-font-size: 12px;
+}
+
+.settings-section {
+    -fx-background-color: rgba(255, 255, 255, 0.02);
+    -fx-border-color: rgba(255, 255, 255, 0.05);
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 12;
+}
+
+.settings-grid .label {
+    -fx-text-fill: #cbd5e1;
+    -fx-font-size: 13px;
+}
+
+.settings-field {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-text-fill: #e5e7eb;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 10 12;
+}
+
+.settings-field:focused {
+    -fx-border-color: #38bdf8;
+    -fx-effect: dropshadow(gaussian, rgba(56, 189, 248, 0.25), 12, 0.42, 0, 4);
+}
+
+.primary-btn {
+    -fx-background-color: linear-gradient(to right, #06b6d4, #3b82f6);
+    -fx-text-fill: #e2e8f0;
+    -fx-border-color: transparent;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-padding: 8 16;
+    -fx-font-weight: 700;
+    -fx-cursor: hand;
+}
+
+.primary-btn:hover {
+    -fx-background-color: linear-gradient(to right, #22d3ee, #60a5fa);
+}
+
+.primary-btn:pressed {
+    -fx-background-color: linear-gradient(to right, #0284c7, #2563eb);
+}
+
+.ghost-btn {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-text-fill: #e2e8f0;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 8 14;
+    -fx-cursor: hand;
+}
+
+.ghost-btn:hover {
+    -fx-background-color: rgba(59, 130, 246, 0.16);
+    -fx-border-color: rgba(59, 130, 246, 0.32);
+}
+
+.ghost-btn:pressed {
+    -fx-background-color: rgba(59, 130, 246, 0.24);
+}
+
+.form-error {
+    -fx-text-fill: #f9a8d4;
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+}

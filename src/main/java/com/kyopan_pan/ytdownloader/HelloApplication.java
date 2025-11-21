@@ -7,30 +7,9 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
-import javafx.scene.control.Menu;
-import javafx.scene.control.MenuBar;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.ProgressBar;
-import javafx.scene.control.ProgressIndicator;
-import javafx.scene.control.SeparatorMenuItem;
-import javafx.scene.control.TextField;
-import javafx.scene.input.ClipboardContent;
-import javafx.scene.input.Dragboard;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
-import javafx.scene.input.TransferMode;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.VBox;
+import javafx.scene.control.*;
+import javafx.scene.input.*;
+import javafx.scene.layout.*;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
@@ -45,6 +24,7 @@ public class HelloApplication extends Application {
     private Stage primaryStage;
     private UserSettings settings;
     private final DownloadsManager downloadsManager = new DownloadsManager();
+    private final DependencyManager dependencyManager = new DependencyManager();
     private DownloadExecutor downloadExecutor;
     private TextField urlInput;
     private Button downloadBtn;
@@ -58,6 +38,7 @@ public class HelloApplication extends Application {
     private Stage logStage;
     private ListView<String> logListView;
     private String stylesheetUrl;
+    private Dialog<ButtonType> setupDialog;
 
     @Override
     public void start(Stage primaryStage) {
@@ -69,7 +50,7 @@ public class HelloApplication extends Application {
         // === 追加部分: バイナリの準備 ===
         // UIブロックを避けるため別スレッドで実行するか、
         // 本来はスプラッシュスクリーン等で待機させるべきですが、簡易的にここで呼び出します
-        new Thread(() -> new DependencyManager().ensureBinaries()).start();
+        new Thread(dependencyManager::ensureBinaries).start();
 
         urlInput = new TextField();
         urlInput.setPromptText("YouTube URL...");
@@ -129,6 +110,7 @@ public class HelloApplication extends Application {
         primaryStage.setOnCloseRequest(event -> settings.save());
         primaryStage.setOnShown(event -> snapWindowToRight(primaryStage));
         primaryStage.show();
+        Platform.runLater(this::maybeShowInitialSetupUi);
     }
 
     private void snapWindowToRight(Stage stage) {
@@ -216,6 +198,9 @@ public class HelloApplication extends Application {
         }
         String url = urlInput.getText();
         if (url != null && !url.isEmpty()) {
+            if (!ensureYtDlpConfigured()) {
+                return;
+            }
             downloadExecutor.download(url, downloadBtn, downloadIcon, stopIcon, successIcon, this::refreshFileList);
             urlInput.clear();
         }
@@ -228,19 +213,154 @@ public class HelloApplication extends Application {
         downloadBtn.setAccessibleText("Download");
     }
 
+    private void maybeShowInitialSetupUi() {
+        if (!isYtDlpConfigured()) {
+            AppLogger.log("[HelloApplication] yt-dlp not configured. Showing initial setup dialog.");
+            showInitialSetupDialog();
+        }
+    }
+
+    private boolean ensureYtDlpConfigured() {
+        if (isYtDlpConfigured()) {
+            return true;
+        }
+        AppLogger.log("[HelloApplication] Download blocked until initial setup completes.");
+        showInitialSetupDialog();
+        return false;
+    }
+
+    private boolean isYtDlpConfigured() {
+        File ytDlp = new File(DownloadConfig.getYtDlpPath());
+        return ytDlp.exists() && ytDlp.canExecute();
+    }
+
+    private void showInitialSetupDialog() {
+        if (setupDialog != null && setupDialog.isShowing()) {
+            AppLogger.log("[HelloApplication] Initial setup dialog is already open; focusing existing window.");
+            if (setupDialog.getDialogPane().getScene() != null && setupDialog.getDialogPane().getScene().getWindow() != null) {
+                if (setupDialog.getDialogPane().getScene().getWindow() instanceof Stage stage) {
+                    stage.toFront();
+                    stage.requestFocus();
+                }
+            }
+            return;
+        }
+
+        AppLogger.log("[HelloApplication] Opening initial setup dialog.");
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("初回セットアップ");
+        dialog.initOwner(primaryStage);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.getDialogPane().getStyleClass().add("glass-dialog");
+        dialog.getDialogPane().setPrefWidth(540);
+        if (stylesheetUrl != null) {
+            dialog.getDialogPane().getStylesheets().add(stylesheetUrl);
+        }
+
+        Label heading = new Label("yt-dlpのセットアップ");
+        heading.getStyleClass().add("dialog-heading");
+
+        Label description = new Label("初回起動ではyt-dlpのダウンロードと実行権限の付与が必要です。ボタン一つで最新を取得して、すぐにダウンロードを開始できます。");
+        description.setWrapText(true);
+        description.getStyleClass().add("dialog-subtitle");
+
+        StackPane heroIcon = new StackPane();
+        heroIcon.getStyleClass().add("hero-icon");
+        Label heroGlyph = new Label("YD");
+        heroGlyph.getStyleClass().add("hero-glyph");
+        heroIcon.getChildren().add(heroGlyph);
+
+        Label badge = new Label("必須");
+        badge.getStyleClass().addAll("pill", "pill-warning");
+
+        Region heroSpacer = new Region();
+        HBox.setHgrow(heroSpacer, Priority.ALWAYS);
+        VBox heroText = new VBox(6, heading, description);
+        heroText.setAlignment(Pos.CENTER_LEFT);
+        HBox heroRow = new HBox(14, heroIcon, heroText, heroSpacer, badge);
+        heroRow.setAlignment(Pos.CENTER_LEFT);
+        heroRow.getStyleClass().add("dialog-hero");
+
+        Label versionLabel = new Label("確認中...");
+        versionLabel.getStyleClass().addAll("pill", "pill-accent");
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setPrefSize(16, 16);
+        spinner.setMaxSize(16, 16);
+        spinner.setVisible(false);
+        spinner.setManaged(false);
+        Label statusLabel = new Label("yt-dlpの状態を確認中...");
+        statusLabel.getStyleClass().add("muted-label");
+
+        Button installButton = new Button("自動セットアップ");
+        installButton.getStyleClass().add("primary-btn");
+        installButton.setOnAction(event -> {
+            AppLogger.log("[HelloApplication] Initial setup: auto setup triggered.");
+            updateYtDlpAsync(dependencyManager, versionLabel, statusLabel, spinner, installButton);
+        });
+
+        Button openSettingsButton = new Button("設定を開く");
+        openSettingsButton.getStyleClass().add("ghost-btn");
+        openSettingsButton.setOnAction(event -> openSettingsDialog());
+
+        Label statusHeading = new Label("yt-dlpの状態");
+        statusHeading.getStyleClass().add("info-title");
+        HBox versionRow = new HBox(8, versionLabel, spinner, installButton);
+        versionRow.setAlignment(Pos.CENTER_LEFT);
+
+        GridPane statusGrid = new GridPane();
+        statusGrid.setHgap(12);
+        statusGrid.setVgap(8);
+        Label versionKey = new Label("バージョン");
+        versionKey.getStyleClass().add("muted-label");
+        Label stateKey = new Label("ステータス");
+        stateKey.getStyleClass().add("muted-label");
+        statusGrid.addRow(0, versionKey, versionRow);
+        statusGrid.addRow(1, stateKey, statusLabel);
+
+        VBox versionCard = new VBox(10, statusHeading, statusGrid);
+        versionCard.getStyleClass().add("info-card");
+
+        Region actionsSpacer = new Region();
+        HBox.setHgrow(actionsSpacer, Priority.ALWAYS);
+        HBox actionsRow = new HBox(10, actionsSpacer, openSettingsButton);
+        actionsRow.setAlignment(Pos.CENTER_RIGHT);
+
+        VBox content = new VBox(16, heroRow, versionCard, actionsRow);
+        content.getStyleClass().add("dialog-content");
+        content.setPadding(new Insets(12, 6, 6, 6));
+
+        dialog.getDialogPane().setContent(content);
+        dialog.setResizable(false);
+        dialog.setOnHidden(event -> setupDialog = null);
+
+        refreshYtDlpVersion(dependencyManager, versionLabel, statusLabel, spinner, installButton);
+
+        setupDialog = dialog;
+        dialog.show();
+    }
+
     private void openSettingsDialog() {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("設定");
         dialog.initOwner(primaryStage);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.getDialogPane().getStyleClass().add("glass-dialog");
+        dialog.getDialogPane().setPrefWidth(600);
+        if (stylesheetUrl != null) {
+            dialog.getDialogPane().getStylesheets().add(stylesheetUrl);
+        }
 
-        DependencyManager dependencyManager = new DependencyManager();
         TextField widthField = new TextField(String.valueOf((int) Math.round(settings.getWindowWidth())));
         TextField heightField = new TextField(String.valueOf((int) Math.round(settings.getWindowHeight())));
         TextField outputField = new TextField(settings.getDownloadDirectory());
+        widthField.getStyleClass().add("settings-field");
+        heightField.getStyleClass().add("settings-field");
+        outputField.getStyleClass().add("settings-field");
         outputField.setPrefColumnCount(22);
 
         Button browseBtn = new Button("フォルダを選択");
+        browseBtn.getStyleClass().add("ghost-btn");
         browseBtn.setOnAction(event -> {
             DirectoryChooser chooser = new DirectoryChooser();
             File current = new File(outputField.getText());
@@ -254,35 +374,70 @@ public class HelloApplication extends Application {
         });
 
         Label errorLabel = new Label();
-        errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-size: 12px;");
+        errorLabel.getStyleClass().add("form-error");
 
         Label ytDlpVersionLabel = new Label("確認中...");
-        ytDlpVersionLabel.setStyle("-fx-text-fill: #0ea5e9; -fx-font-weight: 700;");
+        ytDlpVersionLabel.getStyleClass().addAll("pill", "pill-accent");
         ProgressIndicator versionSpinner = new ProgressIndicator();
         versionSpinner.setPrefSize(16, 16);
         versionSpinner.setMaxSize(16, 16);
         versionSpinner.setVisible(false);
         versionSpinner.setManaged(false);
         Label versionStatusLabel = new Label("yt-dlpのバージョンを確認中...");
-        versionStatusLabel.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 12px;");
+        versionStatusLabel.getStyleClass().add("muted-label");
         Button updateYtDlpBtn = new Button("最新を取得");
+        updateYtDlpBtn.getStyleClass().add("primary-btn");
         updateYtDlpBtn.setOnAction(event -> updateYtDlpAsync(dependencyManager, ytDlpVersionLabel, versionStatusLabel, versionSpinner, updateYtDlpBtn));
 
         HBox versionRow = new HBox(8, ytDlpVersionLabel, versionSpinner, updateYtDlpBtn);
         versionRow.setAlignment(Pos.CENTER_LEFT);
-        VBox versionBox = new VBox(6, versionRow, versionStatusLabel);
+
+        GridPane statusGrid = new GridPane();
+        statusGrid.setHgap(10);
+        statusGrid.setVgap(8);
+        Label versionKey = new Label("バージョン");
+        versionKey.getStyleClass().add("muted-label");
+        Label statusKey = new Label("ステータス");
+        statusKey.getStyleClass().add("muted-label");
+        statusGrid.addRow(0, versionKey, versionRow);
+        statusGrid.addRow(1, statusKey, versionStatusLabel);
+
+        Label ytDlpTitle = new Label("yt-dlp");
+        ytDlpTitle.getStyleClass().add("info-title");
+        VBox versionBox = new VBox(10, ytDlpTitle, statusGrid);
+        versionBox.getStyleClass().add("info-card");
 
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(12);
-        grid.addRow(0, new Label("画面幅"), widthField);
-        grid.addRow(1, new Label("画面高さ"), heightField);
-        grid.add(new Label("出力先フォルダ"), 0, 2);
-        grid.add(new HBox(8, outputField, browseBtn), 1, 2);
-        grid.add(new Label("yt-dlp"), 0, 3);
-        grid.add(versionBox, 1, 3);
+        Label widthLabel = new Label("画面幅");
+        Label heightLabel = new Label("画面高さ");
+        Label folderLabel = new Label("出力先フォルダ");
+        widthLabel.getStyleClass().add("muted-label");
+        heightLabel.getStyleClass().add("muted-label");
+        folderLabel.getStyleClass().add("muted-label");
+        grid.addRow(0, widthLabel, widthField);
+        grid.addRow(1, heightLabel, heightField);
+        grid.add(folderLabel, 0, 2);
+        HBox outputRow = new HBox(8, outputField, browseBtn);
+        outputRow.setAlignment(Pos.CENTER_LEFT);
+        grid.add(outputRow, 1, 2);
+        grid.getStyleClass().add("settings-grid");
 
-        dialog.getDialogPane().setContent(new VBox(10, grid, errorLabel));
+        Label heading = new Label("アプリ設定");
+        heading.getStyleClass().add("dialog-heading");
+        Label subtitle = new Label("ウィンドウサイズ、保存先、yt-dlpの状態をまとめて管理します。");
+        subtitle.setWrapText(true);
+        subtitle.getStyleClass().add("dialog-subtitle");
+
+        VBox windowSection = new VBox(8, grid);
+        windowSection.getStyleClass().add("settings-section");
+
+        VBox content = new VBox(14, heading, subtitle, windowSection, versionBox, errorLabel);
+        content.getStyleClass().add("dialog-content");
+        content.setPadding(new Insets(8, 6, 6, 6));
+
+        dialog.getDialogPane().setContent(content);
 
         Button okBtn = (Button) dialog.getDialogPane().lookupButton(ButtonType.OK);
         okBtn.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
