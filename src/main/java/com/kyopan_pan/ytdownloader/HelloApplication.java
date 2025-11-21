@@ -14,6 +14,7 @@ import javafx.scene.shape.SVGPath;
 import javafx.stage.Stage;
 
 import java.io.File;
+import java.net.URL;
 import java.util.Collections;
 
 public class HelloApplication extends Application {
@@ -62,7 +63,12 @@ public class HelloApplication extends Application {
         downloadBtn.setOnAction(e -> handleDownload(urlInput, downloadBtn, downloadIcon));
 
         Scene scene = new Scene(root, 360, 600);
-        scene.getStylesheets().add(getClass().getResource("styles.css").toExternalForm());
+        URL stylesheet = getClass().getResource("styles.css");
+        if (stylesheet != null) {
+            scene.getStylesheets().add(stylesheet.toExternalForm());
+        } else {
+            System.err.println("styles.css not found on classpath; skipping stylesheet load.");
+        }
         primaryStage.setTitle("YT Downloader");
         primaryStage.setScene(scene);
         primaryStage.setAlwaysOnTop(true);

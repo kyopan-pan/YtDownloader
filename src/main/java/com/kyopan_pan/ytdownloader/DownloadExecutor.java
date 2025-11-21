@@ -82,21 +82,37 @@ public class DownloadExecutor {
         String mp4Name = toMp4Name(originalName);
         Path outputPath = Paths.get(DownloadConfig.DOWNLOAD_DIR, mp4Name);
 
+        // 1. yt-dlp: 標準出力(-)にデータを流す設定
         ProcessBuilder ytDlp = new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
-                "-f", "bv+ba/b",
-                "-o", "-",
+                "-f", "bv+ba/b", // ベスト画質+ベスト音質
+                "-o", "-",       // 標準出力へ
                 url
         );
+
+        // 2. ffmpeg: パイプからの入力を強化設定で受け取る
         ProcessBuilder ffmpeg = new ProcessBuilder(
                 DownloadConfig.getFfmpegPath(),
                 "-loglevel", "error",
+
+                // 【重要】パイプ入力の解析バッファを増やす設定
+                "-analyzeduration", "100M", // 解析にかける時間/データ量(100MB分)
+                "-probesize", "100M",       // フォーマット検出に使うデータ量(100MB)
+
+                // 入力フォーマットを明示（誤検知防止）
+                "-f", "webm",
                 "-i", "pipe:0",
+
+                // 変換設定
                 "-c:v", "libx264",
                 "-preset", "veryfast",
                 "-c:a", "aac",
                 "-b:a", "192k",
+
+                // エラー許容設定（軽微なパケット破損を無視して続行させる）
+                "-ignore_unknown",
+
                 "-movflags", "+faststart",
                 "-f", "mp4",
                 "-y",
@@ -106,11 +122,15 @@ public class DownloadExecutor {
         addBinDirToPath(ytDlp);
         addBinDirToPath(ffmpeg);
 
+        // パイプラインの実行（ダウンロードと変換を同時に行うため高速）
         List<Process> pipeline = ProcessBuilder.startPipeline(List.of(ytDlp, ffmpeg));
         Process ytProcess = pipeline.get(0);
         Process ffmpegProcess = pipeline.get(1);
 
+        // ログ出力のハンドリング
+        // yt-dlpの進捗は標準エラーに出るため、それを監視
         Thread ytLogs = consumeAsync(ytProcess.getErrorStream(), true);
+        // ffmpegのエラーログも監視
         Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false);
 
         int ytExit = ytProcess.waitFor();
@@ -118,6 +138,8 @@ public class DownloadExecutor {
 
         ytLogs.join();
         ffLogs.join();
+
+        // 両方のプロセスが正常終了(0)していれば成功
         return ytExit == 0 && ffExit == 0;
     }
 
