@@ -106,6 +106,9 @@
 .downloads-list .file-name {
     -fx-text-fill: #e5e7eb;
     -fx-font-size: 13px;
+    -fx-text-overrun: ellipsis;
+    -fx-ellipsis-string: "...";
+    -fx-wrap-text: false;
 }
 
 .downloads-list .delete-btn {
@@ -139,4 +142,11 @@
 .downloads-list .scroll-bar:vertical .thumb {
     -fx-background-color: rgba(255, 255, 255, 0.25);
     -fx-background-radius: 8;
+}
+
+.downloads-list .scroll-bar:horizontal {
+    -fx-opacity: 0;
+    -fx-max-height: 0;
+    -fx-pref-height: 0;
+    -fx-min-height: 0;
 }

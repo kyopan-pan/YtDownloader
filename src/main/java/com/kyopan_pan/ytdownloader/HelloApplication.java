@@ -3,12 +3,15 @@ package com.kyopan_pan.ytdownloader;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -61,6 +64,7 @@ public class HelloApplication extends Application {
 
         fileListView = new ListView<>();
         fileListView.getStyleClass().add("downloads-list");
+        disableHorizontalScroll(fileListView);
         updateFileList();
 
         Label downloadsLabel = new Label("Downloads");
@@ -99,9 +103,17 @@ public class HelloApplication extends Application {
 
             {
                 nameLabel.getStyleClass().add("file-name");
+                nameLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+                nameLabel.setEllipsisString("...");
+                nameLabel.setMaxWidth(Double.MAX_VALUE);
+                nameLabel.setMinWidth(0);
+                HBox.setHgrow(nameLabel, Priority.ALWAYS);
                 HBox.setHgrow(spacer, Priority.ALWAYS);
                 container.setAlignment(Pos.CENTER_LEFT);
                 container.getStyleClass().add("file-row");
+                container.setMaxWidth(Double.MAX_VALUE);
+                prefWidthProperty().bind(fileListView.widthProperty().subtract(16));
+                setMaxWidth(Double.MAX_VALUE);
 
                 deleteBtn.setGraphic(buildDeleteIcon());
                 deleteBtn.getStyleClass().add("delete-btn");
@@ -260,5 +272,30 @@ public class HelloApplication extends Application {
         icon.setScaleX(0.92);
         icon.setScaleY(0.92);
         return icon;
+    }
+
+    private void disableHorizontalScroll(ListView<?> listView) {
+        listView.skinProperty().addListener((obs, oldSkin, newSkin) -> {
+            if (newSkin == null) {
+                return;
+            }
+            Platform.runLater(() -> listView.lookupAll(".scroll-bar").stream()
+                    .filter(node -> node instanceof ScrollBar)
+                    .map(node -> (ScrollBar) node)
+                    .filter(sb -> sb.getOrientation() == Orientation.HORIZONTAL)
+                    .forEach(sb -> {
+                        sb.setManaged(false);
+                        sb.setVisible(false);
+                        sb.setDisable(true);
+                        sb.setOpacity(0);
+                        sb.setPrefHeight(0);
+                    }));
+        });
+
+        listView.addEventFilter(ScrollEvent.SCROLL, event -> {
+            if (event.getDeltaX() != 0) {
+                event.consume();
+            }
+        });
     }
 }
