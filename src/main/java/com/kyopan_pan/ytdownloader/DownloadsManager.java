@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,13 +21,12 @@ public class DownloadsManager {
 
     public List<File> loadRecentVideos() {
         try {
-            List<File> files = Files.list(Paths.get(DownloadConfig.DOWNLOAD_DIR))
+            return Files.list(Paths.get(DownloadConfig.DOWNLOAD_DIR))
                     .filter(Files::isRegularFile)
                     .map(Path::toFile)
                     .filter(f -> f.getName().endsWith(".mp4"))
+                    .sorted(Comparator.comparingLong(File::lastModified).reversed())
                     .collect(Collectors.toList());
-            Collections.reverse(files);
-            return files;
         } catch (Exception e) {
             e.printStackTrace();
             return Collections.emptyList();

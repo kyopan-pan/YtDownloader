@@ -326,15 +326,15 @@ public class DownloadExecutor {
                 if (seg.equalsIgnoreCase("anime") && filtered.size() > 1) {
                     continue;
                 }
-                picked.add(0, seg); // preserve original order
+                picked.addFirst(seg); // preserve original order
             }
 
             if (picked.isEmpty()) {
-                picked.add(filtered.get(filtered.size() - 1));
+                picked.add(filtered.getLast());
             }
 
             String base = String.join("-", picked);
-            String sanitized = base.replaceAll("[^a-zA-Z0-9-_\\.]", "_");
+            String sanitized = base.replaceAll("[^a-zA-Z0-9-_.]", "_");
             if (sanitized.isBlank()) {
                 sanitized = "animethemes";
             }
