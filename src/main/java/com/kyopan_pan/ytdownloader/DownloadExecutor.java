@@ -5,10 +5,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.shape.SVGPath;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -58,7 +55,7 @@ public class DownloadExecutor {
         return downloadActive;
     }
 
-    public void stopDownload(Button btn, SVGPath downloadIcon) {
+    public void stopDownload(Button btn) {
         if (!downloadActive) {
             return;
         }
@@ -107,9 +104,8 @@ public class DownloadExecutor {
     private boolean runStandardDownload(String url) throws Exception {
         String outputTemplate = DownloadConfig.getDownloadDir() + "/%(title)s.%(ext)s";
         logStep("yt-dlpを通常モードで起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
-        long start = logProcessStart("yt-dlp（通常モード）");
 
-        ProcessBuilder pb = new ProcessBuilder(
+        ProcessBuilder pb = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
                 "-f", "bv+ba/b",
@@ -117,20 +113,12 @@ public class DownloadExecutor {
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
                 "-o", outputTemplate,
                 url
-        );
+        ), true);
 
-        addBinDirToPath(pb);
-        pb.redirectErrorStream(true);
         Process process = pb.start();
-        registerProcess(process);
-        try {
-            consumeStream(process.getInputStream(), true, "yt-dlp");
-            int exitCode = waitForProcess(process);
-            logProcessEnd("yt-dlp（通常モード）", start, exitCode);
-            return exitCode == 0 && !cancelRequested;
-        } finally {
-            unregisterProcess(process);
-        }
+        TrackedProcess tracked = monitorProcess("yt-dlp（通常モード）", process, true, false, "yt-dlp");
+        int exitCode = awaitProcess(tracked);
+        return succeeded(exitCode);
     }
 
     private boolean runAnimeThemesPipeline(String url) throws Exception {
@@ -140,16 +128,16 @@ public class DownloadExecutor {
         logStep("AnimeThemesモード: 即時生成した出力ファイル=" + outputPath);
 
         // 1. yt-dlp: 標準出力(-)にデータを流す設定
-        ProcessBuilder ytDlp = new ProcessBuilder(
+        ProcessBuilder ytDlp = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
                 "-f", "bv+ba/b", // ベスト画質+ベスト音質
                 "-o", "-",       // 標準出力へ
                 url
-        );
+        ), false);
 
         // 2. ffmpeg: パイプからの入力を強化設定で受け取る
-        ProcessBuilder ffmpeg = new ProcessBuilder(
+        ProcessBuilder ffmpeg = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getFfmpegPath(),
                 "-loglevel", "error",
 
@@ -174,44 +162,22 @@ public class DownloadExecutor {
                 "-f", "mp4",
                 "-y",
                 outputPath.toString()
-        );
-
-        addBinDirToPath(ytDlp);
-        addBinDirToPath(ffmpeg);
+        ), false);
 
         // パイプラインの実行（ダウンロードと変換を同時に行うため高速）
         logStep("AnimeThemesモード: yt-dlp→ffmpegパイプラインを起動します。");
         List<Process> pipeline = ProcessBuilder.startPipeline(List.of(ytDlp, ffmpeg));
         Process ytProcess = pipeline.get(0);
         Process ffmpegProcess = pipeline.get(1);
-        registerProcess(ytProcess);
-        registerProcess(ffmpegProcess);
-        long ytStart = logProcessStart("yt-dlp（AnimeThemes）");
-        long ffStart = logProcessStart("ffmpeg（AnimeThemes）");
 
-        // ログ出力のハンドリング
-        // yt-dlpの進捗は標準エラーに出るため、それを監視
-        Thread ytLogs = consumeAsync(ytProcess.getErrorStream(), true, "yt-dlp");
-        // ffmpegのエラーログも監視
-        Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false, "ffmpeg");
+        TrackedProcess ytMonitor = monitorProcess("yt-dlp（AnimeThemes）", ytProcess, true, true, "yt-dlp");
+        TrackedProcess ffMonitor = monitorProcess("ffmpeg（AnimeThemes）", ffmpegProcess, false, true, "ffmpeg");
 
-        int ytExit;
-        int ffExit;
-        try {
-            ytExit = waitForProcess(ytProcess);
-            logProcessEnd("yt-dlp（AnimeThemes）", ytStart, ytExit);
-            ffExit = waitForProcess(ffmpegProcess);
-            logProcessEnd("ffmpeg（AnimeThemes）", ffStart, ffExit);
-        } finally {
-            unregisterProcess(ytProcess);
-            unregisterProcess(ffmpegProcess);
-        }
-
-        ytLogs.join();
-        ffLogs.join();
+        int ytExit = awaitProcess(ytMonitor);
+        int ffExit = awaitProcess(ffMonitor);
 
         // 両方のプロセスが正常終了(0)していれば成功
-        return ytExit == 0 && ffExit == 0 && !cancelRequested;
+        return succeeded(ytExit) && succeeded(ffExit);
     }
 
     private String animeThemesFilenameFromTitle(String url) {
@@ -237,39 +203,14 @@ public class DownloadExecutor {
 
     private String fetchTitleWithCurl(String url) {
         logStep("curlでtitleタグ取得を試行中...");
-        long start = logProcessStart("curl（title取得）");
-        ProcessBuilder pb = new ProcessBuilder(
-                "curl",
-                "-Ls",
-                "-m", "5",
-                url
-        );
-        addBinDirToPath(pb);
-        pb.redirectErrorStream(true);
-        StringBuilder html = new StringBuilder();
-        int exitCode;
-        try {
-            Process process = pb.start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (html.length() < 12000) {
-                        html.append(line).append('\n');
-                    }
-                }
-            }
-            exitCode = process.waitFor();
-        } catch (Exception e) {
-            logStep("curlの実行に失敗: " + e.getMessage());
-            logProcessEnd("curl（title取得）", start, -1);
+        CommandResult result = collectOutput("curl（title取得）",
+                new ProcessBuilder("curl", "-Ls", "-m", "5", url),
+                12000);
+        if (!result.success()) {
+            logStep("curlが非0終了(exit=" + result.exitCode() + ")。");
             return null;
         }
-        logProcessEnd("curl（title取得）", start, exitCode);
-        if (exitCode != 0) {
-            logStep("curlが非0終了(exit=" + exitCode + ")。");
-            return null;
-        }
-        String title = parseTitleFromHtml(html.toString());
+        String title = parseTitleFromHtml(result.output());
         if (title != null) {
             logStep("curlでtitleを取得: " + title);
         } else {
@@ -510,18 +451,23 @@ public class DownloadExecutor {
         }
 
         public static ProgressUpdate infoLoading(String elapsed) {
-            String elapsedPart = (elapsed == null || elapsed.isBlank()) ? "" : String.format(" (経過: %s)", elapsed);
-            return new ProgressUpdate("動画読み込み中..." + elapsedPart, ProgressIndicator.INDETERMINATE_PROGRESS, true);
+            return new ProgressUpdate("動画読み込み中..." + formatElapsed(elapsed), ProgressIndicator.INDETERMINATE_PROGRESS, true);
         }
 
         public static ProgressUpdate downloading(double percent, String elapsed) {
             double clamped = Math.max(0, Math.min(percent, 100));
-            String elapsedPart = (elapsed == null || elapsed.isBlank()) ? "" : String.format(" (経過: %s)", elapsed);
-            return new ProgressUpdate(String.format("ダウンロード中... %.1f%%%s", clamped, elapsedPart), clamped / 100.0, true);
+            return new ProgressUpdate(String.format("ダウンロード中... %.1f%%%s", clamped, formatElapsed(elapsed)), clamped / 100.0, true);
         }
 
         public static ProgressUpdate hidden() {
             return new ProgressUpdate("", 0, false);
+        }
+
+        private static String formatElapsed(String elapsed) {
+            if (elapsed == null || elapsed.isBlank()) {
+                return "";
+            }
+            return String.format(" (経過: %s)", elapsed);
         }
     }
 
@@ -600,7 +546,99 @@ public class DownloadExecutor {
         loadingElapsedThread.start();
     }
 
+    private ProcessBuilder prepareProcess(ProcessBuilder builder, boolean redirectErrorStream) {
+        addBinDirToPath(builder);
+        builder.redirectErrorStream(redirectErrorStream);
+        return builder;
+    }
+
+    private TrackedProcess monitorProcess(String label, Process process, boolean parseProgress, boolean useErrorStream, String sourceLabel) {
+        registerProcess(process);
+        long start = logProcessStart(label);
+        InputStream logStream = useErrorStream ? process.getErrorStream() : process.getInputStream();
+        Thread logThread = consumeAsync(logStream, parseProgress, sourceLabel);
+        return new TrackedProcess(process, label, start, logThread);
+    }
+
+    private int awaitProcess(TrackedProcess tracked) {
+        try {
+            int exitCode = waitForProcess(tracked.process());
+            logProcessEnd(tracked.label(), tracked.startNanos(), exitCode);
+            joinQuietly(tracked.logThread());
+            return exitCode;
+        } finally {
+            unregisterProcess(tracked.process());
+        }
+    }
+
+    private boolean succeeded(int exitCode) {
+        return exitCode == 0 && !cancelRequested;
+    }
+
+    private void joinQuietly(Thread thread) {
+        if (thread == null) {
+            return;
+        }
+        try {
+            thread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private CommandResult collectOutput(String label, ProcessBuilder builder, int maxChars) {
+        prepareProcess(builder, true);
+        long start = logProcessStart(label);
+        Process process = null;
+        try {
+            process = builder.start();
+            registerProcess(process);
+            String output = readLimited(process.getInputStream(), maxChars);
+            int exitCode = waitForProcess(process);
+            logProcessEnd(label, start, exitCode);
+            return new CommandResult(exitCode, output);
+        } catch (Exception e) {
+            logStep(label + " の実行に失敗: " + e.getMessage());
+            logProcessEnd(label, start, -1);
+            return new CommandResult(-1, "");
+        } finally {
+            if (process != null) {
+                unregisterProcess(process);
+            }
+        }
+    }
+
+    private String readLimited(InputStream stream, int maxChars) throws IOException {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            StringBuilder out = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null && out.length() < maxChars) {
+                if (out.length() + line.length() + 1 > maxChars) {
+                    int remaining = maxChars - out.length();
+                    if (remaining > 0) {
+                        out.append(line, 0, remaining);
+                    }
+                    break;
+                }
+                out.append(line);
+                if (out.length() < maxChars) {
+                    out.append('\n');
+                }
+            }
+            return out.toString();
+        }
+    }
+
     private void markProgressStarted() {
         progressStarted = true;
+    }
+
+    private record TrackedProcess(Process process, String label, long startNanos, Thread logThread) {
+    }
+
+    private record CommandResult(int exitCode, String output) {
+        boolean success() {
+            return exitCode == 0;
+        }
     }
 }

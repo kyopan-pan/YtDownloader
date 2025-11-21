@@ -6,6 +6,7 @@ import javafx.collections.ListChangeListener;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.input.*;
@@ -193,7 +194,7 @@ public class HelloApplication extends Application {
 
     private void handleDownload(TextField urlInput) {
         if (downloadExecutor.isDownloadActive()) {
-            downloadExecutor.stopDownload(downloadBtn, downloadIcon);
+            downloadExecutor.stopDownload(downloadBtn);
             return;
         }
         String url = urlInput.getText();
@@ -282,18 +283,11 @@ public class HelloApplication extends Application {
         heroRow.setAlignment(Pos.CENTER_LEFT);
         heroRow.getStyleClass().add("dialog-hero");
 
-        Label versionLabel = new Label("確認中...");
-        versionLabel.getStyleClass().addAll("pill", "pill-accent");
-        ProgressIndicator spinner = new ProgressIndicator();
-        spinner.setPrefSize(16, 16);
-        spinner.setMaxSize(16, 16);
-        spinner.setVisible(false);
-        spinner.setManaged(false);
-        Label statusLabel = new Label("yt-dlpの状態を確認中...");
-        statusLabel.getStyleClass().add("muted-label");
-
-        Button installButton = new Button("自動セットアップ");
-        installButton.getStyleClass().add("primary-btn");
+        VersionControls setupControls = createYtDlpControls("yt-dlpの状態を確認中...", "自動セットアップ");
+        Label versionLabel = setupControls.versionLabel();
+        Label statusLabel = setupControls.statusLabel();
+        ProgressIndicator spinner = setupControls.spinner();
+        Button installButton = setupControls.actionButton();
         installButton.setOnAction(event -> {
             AppLogger.log("[HelloApplication] Initial setup: auto setup triggered.");
             updateYtDlpAsync(dependencyManager, versionLabel, statusLabel, spinner, installButton);
@@ -308,15 +302,7 @@ public class HelloApplication extends Application {
         HBox versionRow = new HBox(8, versionLabel, spinner, installButton);
         versionRow.setAlignment(Pos.CENTER_LEFT);
 
-        GridPane statusGrid = new GridPane();
-        statusGrid.setHgap(12);
-        statusGrid.setVgap(8);
-        Label versionKey = new Label("バージョン");
-        versionKey.getStyleClass().add("muted-label");
-        Label stateKey = new Label("ステータス");
-        stateKey.getStyleClass().add("muted-label");
-        statusGrid.addRow(0, versionKey, versionRow);
-        statusGrid.addRow(1, stateKey, statusLabel);
+        GridPane statusGrid = buildStatusGrid(versionRow, statusLabel, 12);
 
         VBox versionCard = new VBox(10, statusHeading, statusGrid);
         versionCard.getStyleClass().add("info-card");
@@ -376,31 +362,17 @@ public class HelloApplication extends Application {
         Label errorLabel = new Label();
         errorLabel.getStyleClass().add("form-error");
 
-        Label ytDlpVersionLabel = new Label("確認中...");
-        ytDlpVersionLabel.getStyleClass().addAll("pill", "pill-accent");
-        ProgressIndicator versionSpinner = new ProgressIndicator();
-        versionSpinner.setPrefSize(16, 16);
-        versionSpinner.setMaxSize(16, 16);
-        versionSpinner.setVisible(false);
-        versionSpinner.setManaged(false);
-        Label versionStatusLabel = new Label("yt-dlpのバージョンを確認中...");
-        versionStatusLabel.getStyleClass().add("muted-label");
-        Button updateYtDlpBtn = new Button("最新を取得");
-        updateYtDlpBtn.getStyleClass().add("primary-btn");
+        VersionControls settingsControls = createYtDlpControls("yt-dlpのバージョンを確認中...", "最新を取得");
+        Label ytDlpVersionLabel = settingsControls.versionLabel();
+        ProgressIndicator versionSpinner = settingsControls.spinner();
+        Label versionStatusLabel = settingsControls.statusLabel();
+        Button updateYtDlpBtn = settingsControls.actionButton();
         updateYtDlpBtn.setOnAction(event -> updateYtDlpAsync(dependencyManager, ytDlpVersionLabel, versionStatusLabel, versionSpinner, updateYtDlpBtn));
 
         HBox versionRow = new HBox(8, ytDlpVersionLabel, versionSpinner, updateYtDlpBtn);
         versionRow.setAlignment(Pos.CENTER_LEFT);
 
-        GridPane statusGrid = new GridPane();
-        statusGrid.setHgap(10);
-        statusGrid.setVgap(8);
-        Label versionKey = new Label("バージョン");
-        versionKey.getStyleClass().add("muted-label");
-        Label statusKey = new Label("ステータス");
-        statusKey.getStyleClass().add("muted-label");
-        statusGrid.addRow(0, versionKey, versionRow);
-        statusGrid.addRow(1, statusKey, versionStatusLabel);
+        GridPane statusGrid = buildStatusGrid(versionRow, versionStatusLabel, 10);
 
         Label ytDlpTitle = new Label("yt-dlp");
         ytDlpTitle.getStyleClass().add("info-title");
@@ -519,6 +491,38 @@ public class HelloApplication extends Application {
         launch();
     }
 
+    private VersionControls createYtDlpControls(String initialStatusText, String actionText) {
+        Label versionLabel = new Label("確認中...");
+        versionLabel.getStyleClass().addAll("pill", "pill-accent");
+
+        ProgressIndicator spinner = new ProgressIndicator();
+        spinner.setPrefSize(16, 16);
+        spinner.setMaxSize(16, 16);
+        spinner.setVisible(false);
+        spinner.setManaged(false);
+
+        Label statusLabel = new Label(initialStatusText);
+        statusLabel.getStyleClass().add("muted-label");
+
+        Button actionButton = new Button(actionText);
+        actionButton.getStyleClass().add("primary-btn");
+
+        return new VersionControls(versionLabel, statusLabel, spinner, actionButton);
+    }
+
+    private GridPane buildStatusGrid(Node versionRow, Label statusLabel, double hGap) {
+        GridPane statusGrid = new GridPane();
+        statusGrid.setHgap(hGap);
+        statusGrid.setVgap(8);
+        Label versionKey = new Label("バージョン");
+        versionKey.getStyleClass().add("muted-label");
+        Label statusKey = new Label("ステータス");
+        statusKey.getStyleClass().add("muted-label");
+        statusGrid.addRow(0, versionKey, versionRow);
+        statusGrid.addRow(1, statusKey, statusLabel);
+        return statusGrid;
+    }
+
     private void refreshYtDlpVersion(DependencyManager dependencyManager, Label versionLabel, Label statusLabel, ProgressIndicator spinner, Button updateButton) {
         versionLabel.setText("確認中...");
         statusLabel.setText("yt-dlpのバージョンを確認中...");
@@ -576,6 +580,10 @@ public class HelloApplication extends Application {
         });
         updater.setDaemon(true);
         updater.start();
+    }
+
+    private record VersionControls(Label versionLabel, Label statusLabel, ProgressIndicator spinner,
+                                   Button actionButton) {
     }
 
     private void openLogWindow() {
