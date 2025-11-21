@@ -7,13 +7,21 @@ import javafx.scene.shape.SVGPath;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DownloadExecutor {
 
+    private static final String ANIME_THEMES_HOST = "animethemes.moe";
     private static final Pattern PERCENT_PATTERN = Pattern.compile("(\\d{1,3}(?:\\.\\d+)?)%");
     private final Consumer<ProgressUpdate> progressConsumer;
 
@@ -40,32 +48,153 @@ public class DownloadExecutor {
 
     private void runDownload(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
         try {
-            // 変更: Configから動的パスを取得し、--ffmpeg-location を追加
-            ProcessBuilder pb = new ProcessBuilder(
-                    DownloadConfig.getYtDlpPath(),
-                    "--no-playlist",
-                    "-f", "bv+ba/b",
-                    "--merge-output-format", "mp4",
-                    "--ffmpeg-location", DownloadConfig.getFfmpegPath(), // ここが重要
-                    "-o", DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s",
-                    url
-            );
-
-            // PATH環境変数の操作は不要になったため削除しても良いですが、念のため残すなら以下のように
-            // 自分の管理するBIN_DIRを含めるようにします
-            String currentPath = System.getenv("PATH");
-            pb.environment().put("PATH", DownloadConfig.BIN_DIR + File.pathSeparator + (currentPath != null ? currentPath : ""));
-
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            logProcessOutput(process);
-
-            int exitCode = process.waitFor();
-            Platform.runLater(() -> handleFinish(exitCode == 0, btn, downloadIcon, onSuccess));
+            boolean success = isAnimeThemesUrl(url)
+                    ? runAnimeThemesPipeline(url)
+                    : runStandardDownload(url);
+            Platform.runLater(() -> handleFinish(success, btn, downloadIcon, onSuccess));
         } catch (Exception ex) {
             ex.printStackTrace();
             Platform.runLater(() -> handleFinish(false, btn, downloadIcon, null));
         }
+    }
+
+    private boolean runStandardDownload(String url) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(
+                DownloadConfig.getYtDlpPath(),
+                "--no-playlist",
+                "-f", "bv+ba/b",
+                "--merge-output-format", "mp4",
+                "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
+                "-o", DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s",
+                url
+        );
+
+        addBinDirToPath(pb);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        consumeStream(process.getInputStream(), true);
+        int exitCode = process.waitFor();
+        return exitCode == 0;
+    }
+
+    private boolean runAnimeThemesPipeline(String url) throws Exception {
+        String originalName = fetchFilename(url);
+        String mp4Name = toMp4Name(originalName);
+        Path outputPath = Paths.get(DownloadConfig.DOWNLOAD_DIR, mp4Name);
+
+        ProcessBuilder ytDlp = new ProcessBuilder(
+                DownloadConfig.getYtDlpPath(),
+                "--no-playlist",
+                "-f", "bv+ba/b",
+                "-o", "-",
+                url
+        );
+        ProcessBuilder ffmpeg = new ProcessBuilder(
+                DownloadConfig.getFfmpegPath(),
+                "-loglevel", "error",
+                "-i", "pipe:0",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-movflags", "+faststart",
+                "-f", "mp4",
+                "-y",
+                outputPath.toString()
+        );
+
+        addBinDirToPath(ytDlp);
+        addBinDirToPath(ffmpeg);
+
+        List<Process> pipeline = ProcessBuilder.startPipeline(List.of(ytDlp, ffmpeg));
+        Process ytProcess = pipeline.get(0);
+        Process ffmpegProcess = pipeline.get(1);
+
+        Thread ytLogs = consumeAsync(ytProcess.getErrorStream(), true);
+        Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false);
+
+        int ytExit = ytProcess.waitFor();
+        int ffExit = ffmpegProcess.waitFor();
+
+        ytLogs.join();
+        ffLogs.join();
+        return ytExit == 0 && ffExit == 0;
+    }
+
+    private String fetchFilename(String url) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(
+                DownloadConfig.getYtDlpPath(),
+                "--no-playlist",
+                "-f", "bv+ba/b",
+                "-o", "%(title)s.%(ext)s",
+                "--get-filename",
+                url
+        );
+        addBinDirToPath(pb);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        List<String> lines = new ArrayList<>();
+        String name = null;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+                String trimmed = line.trim();
+                if (looksLikeFilename(trimmed)) {
+                    name = trimmed;
+                } else if (name == null && !trimmed.isBlank() && !trimmed.startsWith("WARNING")) {
+                    // pick the first non-warning non-empty line as fallback candidate
+                    name = trimmed;
+                }
+            }
+        }
+        int exitCode = process.waitFor();
+        if (exitCode != 0 || name == null || name.isBlank()) {
+            System.err.println("Failed to resolve filename from yt-dlp (exit=" + exitCode + "). Output:\n" + String.join("\n", lines));
+            return fallbackFilename(url);
+        }
+        return name;
+    }
+
+    private boolean looksLikeFilename(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String trimmed = value.trim();
+        if (trimmed.startsWith("WARNING") || trimmed.startsWith("[") || trimmed.contains("warning:")) {
+            return false;
+        }
+        return trimmed.matches("(?i).+\\.(mp4|mkv|webm|m4a|mp3|wav|flac|opus|avi|mov|wmv)$");
+    }
+
+    private String fallbackFilename(String url) {
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        try {
+            URI uri = new URI(url);
+            String hostPart = Optional.ofNullable(uri.getHost()).orElse("video");
+            String path = Optional.ofNullable(uri.getPath()).orElse("");
+            String lastSegment = Paths.get(path).getFileName() != null ? Paths.get(path).getFileName().toString() : "clip";
+            String sanitized = (hostPart + "-" + lastSegment).replaceAll("[^a-zA-Z0-9-_\\.]", "_");
+            return sanitized + "-" + timestamp + ".mp4";
+        } catch (Exception ignored) {
+            return "video-" + timestamp + ".mp4";
+        }
+    }
+
+    private String toMp4Name(String filename) {
+        String justName = Paths.get(filename).getFileName().toString();
+        int dot = justName.lastIndexOf('.');
+        String base = dot > 0 ? justName.substring(0, dot) : justName;
+        return base + ".mp4";
+    }
+
+    private void addBinDirToPath(ProcessBuilder pb) {
+        String currentPath = System.getenv("PATH");
+        pb.environment().put("PATH", DownloadConfig.BIN_DIR + File.pathSeparator + (currentPath != null ? currentPath : ""));
+    }
+
+    private boolean isAnimeThemesUrl(String url) {
+        return url != null && url.toLowerCase().contains(ANIME_THEMES_HOST);
     }
 
     private void handleFinish(boolean success, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
@@ -111,14 +240,23 @@ public class DownloadExecutor {
         }).start();
     }
 
-    private void logProcessOutput(Process process) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+    private Thread consumeAsync(InputStream stream, boolean parseProgress) {
+        Thread t = new Thread(() -> consumeStream(stream, parseProgress));
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
+    private void consumeStream(InputStream stream, boolean parseProgress) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 System.out.println(line);
-                Double percent = extractPercent(line);
-                if (percent != null) {
-                    sendProgress(ProgressUpdate.downloading(percent));
+                if (parseProgress) {
+                    Double percent = extractPercent(line);
+                    if (percent != null) {
+                        sendProgress(ProgressUpdate.downloading(percent));
+                    }
                 }
             }
         } catch (Exception e) {
