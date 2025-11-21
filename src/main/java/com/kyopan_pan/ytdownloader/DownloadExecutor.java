@@ -25,6 +25,10 @@ public class DownloadExecutor {
     private static final String ANIME_THEMES_HOST = "animethemes.moe";
     private static final Pattern PERCENT_PATTERN = Pattern.compile("(\\d{1,3}(?:\\.\\d+)?)%");
     private final Consumer<ProgressUpdate> progressConsumer;
+    private volatile long downloadStartNanos;
+    private volatile boolean downloadActive;
+    private volatile boolean progressStarted;
+    private Thread loadingElapsedThread;
 
     public DownloadExecutor() {
         this(null);
@@ -43,7 +47,9 @@ public class DownloadExecutor {
         if (!btn.getStyleClass().contains("busy")) {
             btn.getStyleClass().add("busy");
         }
-        sendProgress(ProgressUpdate.infoLoading());
+        markDownloadStart();
+        sendProgress(buildLoadingProgress());
+        startLoadingElapsedTicker();
 
         new Thread(() -> runDownload(url, btn, downloadIcon, onSuccess)).start();
     }
@@ -381,6 +387,7 @@ public class DownloadExecutor {
                 btn.getStyleClass().add("error");
             }
         }
+        clearDownloadStart();
         btn.setGraphic(downloadIcon);
         resetButtonStateLater(btn, downloadIcon);
         sendProgress(ProgressUpdate.hidden());
@@ -423,7 +430,8 @@ public class DownloadExecutor {
                 if (parseProgress) {
                     Double percent = extractPercent(line);
                     if (percent != null) {
-                        sendProgress(ProgressUpdate.downloading(percent));
+                        markProgressStarted();
+                        sendProgress(buildDownloadingProgress(percent));
                     }
                 }
             }
@@ -466,12 +474,22 @@ public class DownloadExecutor {
         }
 
         public static ProgressUpdate infoLoading() {
-            return new ProgressUpdate("動画読み込み中...", ProgressIndicator.INDETERMINATE_PROGRESS, true);
+            return infoLoading(null);
+        }
+
+        public static ProgressUpdate infoLoading(String elapsed) {
+            String elapsedPart = (elapsed == null || elapsed.isBlank()) ? "" : String.format(" (経過: %s)", elapsed);
+            return new ProgressUpdate("動画読み込み中..." + elapsedPart, ProgressIndicator.INDETERMINATE_PROGRESS, true);
         }
 
         public static ProgressUpdate downloading(double percent) {
+            return downloading(percent, null);
+        }
+
+        public static ProgressUpdate downloading(double percent, String elapsed) {
             double clamped = Math.max(0, Math.min(percent, 100));
-            return new ProgressUpdate(String.format("ダウンロード中... %.1f%%", clamped), clamped / 100.0, true);
+            String elapsedPart = (elapsed == null || elapsed.isBlank()) ? "" : String.format(" (経過: %s)", elapsed);
+            return new ProgressUpdate(String.format("ダウンロード中... %.1f%%%s", clamped, elapsedPart), clamped / 100.0, true);
         }
 
         public static ProgressUpdate hidden() {
@@ -483,11 +501,76 @@ public class DownloadExecutor {
         System.out.println("[DownloadExecutor] " + message);
     }
 
+    private ProgressUpdate buildDownloadingProgress(double percent) {
+        String elapsed = formatElapsedForUi();
+        return ProgressUpdate.downloading(percent, elapsed);
+    }
+
+    private ProgressUpdate buildLoadingProgress() {
+        return ProgressUpdate.infoLoading(formatElapsedForUi());
+    }
+
+    private void markDownloadStart() {
+        downloadStartNanos = System.nanoTime();
+        downloadActive = true;
+        progressStarted = false;
+    }
+
+    private void clearDownloadStart() {
+        downloadStartNanos = 0;
+        downloadActive = false;
+        progressStarted = false;
+        Thread ticker = loadingElapsedThread;
+        if (ticker != null) {
+            ticker.interrupt();
+        }
+    }
+
     private String formatDuration(long nanos) {
         double millis = nanos / 1_000_000.0;
         if (millis >= 1000) {
             return String.format("%.2f s", millis / 1000.0);
         }
         return String.format("%.1f ms", millis);
+    }
+
+    private String formatElapsedForUi() {
+        long start = downloadStartNanos;
+        if (start <= 0) {
+            return "00:00";
+        }
+        long elapsedSeconds = Math.max(0, (System.nanoTime() - start) / 1_000_000_000L);
+        long hours = elapsedSeconds / 3600;
+        long minutes = (elapsedSeconds % 3600) / 60;
+        long seconds = elapsedSeconds % 60;
+        if (hours > 0) {
+            return String.format("%d:%02d:%02d", hours, minutes, seconds);
+        }
+        return String.format("%02d:%02d", minutes, seconds);
+    }
+
+    private void startLoadingElapsedTicker() {
+        Thread existing = loadingElapsedThread;
+        if (existing != null && existing.isAlive()) {
+            existing.interrupt();
+        }
+        loadingElapsedThread = new Thread(() -> {
+            try {
+                while (downloadActive && !progressStarted) {
+                    sendProgress(buildLoadingProgress());
+                    Thread.sleep(1000);
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                loadingElapsedThread = null;
+            }
+        });
+        loadingElapsedThread.setDaemon(true);
+        loadingElapsedThread.start();
+    }
+
+    private void markProgressStarted() {
+        progressStarted = true;
     }
 }
