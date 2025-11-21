@@ -13,7 +13,7 @@ public class DownloadsManager {
 
     public void ensureDownloadDirectory() {
         try {
-            Files.createDirectories(Paths.get(DownloadConfig.DOWNLOAD_DIR));
+            Files.createDirectories(Paths.get(DownloadConfig.getDownloadDir()));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -21,7 +21,7 @@ public class DownloadsManager {
 
     public List<File> loadRecentVideos() {
         try {
-            return Files.list(Paths.get(DownloadConfig.DOWNLOAD_DIR))
+            return Files.list(Paths.get(DownloadConfig.getDownloadDir()))
                     .filter(Files::isRegularFile)
                     .map(Path::toFile)
                     .filter(f -> f.getName().endsWith(".mp4"))

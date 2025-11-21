@@ -105,7 +105,7 @@ public class DownloadExecutor {
     }
 
     private boolean runStandardDownload(String url) throws Exception {
-        String outputTemplate = DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s";
+        String outputTemplate = DownloadConfig.getDownloadDir() + "/%(title)s.%(ext)s";
         logStep("yt-dlpを通常モードで起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
         long start = logProcessStart("yt-dlp（通常モード）");
 
@@ -136,7 +136,7 @@ public class DownloadExecutor {
     private boolean runAnimeThemesPipeline(String url) throws Exception {
         logStep("AnimeThemesモード: yt-dlpへのファイル名問い合わせをスキップします。");
         String mp4Name = animeThemesFilenameFromTitle(url);
-        Path outputPath = Paths.get(DownloadConfig.DOWNLOAD_DIR, mp4Name);
+        Path outputPath = Paths.get(DownloadConfig.getDownloadDir(), mp4Name);
         logStep("AnimeThemesモード: 即時生成した出力ファイル=" + outputPath);
 
         // 1. yt-dlp: 標準出力(-)にデータを流す設定
