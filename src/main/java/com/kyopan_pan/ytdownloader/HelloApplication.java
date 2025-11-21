@@ -3,6 +3,7 @@ package com.kyopan_pan.ytdownloader;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.control.Menu;
@@ -222,6 +223,7 @@ public class HelloApplication extends Application {
         dialog.initOwner(primaryStage);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
+        DependencyManager dependencyManager = new DependencyManager();
         TextField widthField = new TextField(String.valueOf((int) Math.round(settings.getWindowWidth())));
         TextField heightField = new TextField(String.valueOf((int) Math.round(settings.getWindowHeight())));
         TextField outputField = new TextField(settings.getDownloadDirectory());
@@ -243,6 +245,22 @@ public class HelloApplication extends Application {
         Label errorLabel = new Label();
         errorLabel.setStyle("-fx-text-fill: #f87171; -fx-font-size: 12px;");
 
+        Label ytDlpVersionLabel = new Label("確認中...");
+        ytDlpVersionLabel.setStyle("-fx-text-fill: #0ea5e9; -fx-font-weight: 700;");
+        ProgressIndicator versionSpinner = new ProgressIndicator();
+        versionSpinner.setPrefSize(16, 16);
+        versionSpinner.setMaxSize(16, 16);
+        versionSpinner.setVisible(false);
+        versionSpinner.setManaged(false);
+        Label versionStatusLabel = new Label("yt-dlpのバージョンを確認中...");
+        versionStatusLabel.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 12px;");
+        Button updateYtDlpBtn = new Button("最新を取得");
+        updateYtDlpBtn.setOnAction(event -> updateYtDlpAsync(dependencyManager, ytDlpVersionLabel, versionStatusLabel, versionSpinner, updateYtDlpBtn));
+
+        HBox versionRow = new HBox(8, ytDlpVersionLabel, versionSpinner, updateYtDlpBtn);
+        versionRow.setAlignment(Pos.CENTER_LEFT);
+        VBox versionBox = new VBox(6, versionRow, versionStatusLabel);
+
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(12);
@@ -250,6 +268,8 @@ public class HelloApplication extends Application {
         grid.addRow(1, new Label("画面高さ"), heightField);
         grid.add(new Label("出力先フォルダ"), 0, 2);
         grid.add(new HBox(8, outputField, browseBtn), 1, 2);
+        grid.add(new Label("yt-dlp"), 0, 3);
+        grid.add(versionBox, 1, 3);
 
         dialog.getDialogPane().setContent(new VBox(10, grid, errorLabel));
 
@@ -282,6 +302,7 @@ public class HelloApplication extends Application {
             primaryStage.setHeight(settings.getWindowHeight());
         });
 
+        refreshYtDlpVersion(dependencyManager, ytDlpVersionLabel, versionStatusLabel, versionSpinner, updateYtDlpBtn);
         dialog.showAndWait();
     }
 
@@ -330,5 +351,64 @@ public class HelloApplication extends Application {
 
     public static void main(String[] args) {
         launch();
+    }
+
+    private void refreshYtDlpVersion(DependencyManager dependencyManager, Label versionLabel, Label statusLabel, ProgressIndicator spinner, Button updateButton) {
+        versionLabel.setText("確認中...");
+        statusLabel.setText("yt-dlpのバージョンを確認中...");
+        spinner.setVisible(true);
+        spinner.setManaged(true);
+        spinner.setProgress(ProgressIndicator.INDETERMINATE_PROGRESS);
+        updateButton.setDisable(true);
+
+        Thread loader = new Thread(() -> {
+            DependencyManager.YtDlpVersionResult result = dependencyManager.getYtDlpVersion();
+            Platform.runLater(() -> {
+                spinner.setVisible(false);
+                spinner.setManaged(false);
+                updateButton.setDisable(false);
+                if (result.success() && result.version() != null) {
+                    versionLabel.setText(result.version());
+                } else if (result.version() != null) {
+                    versionLabel.setText(result.version());
+                } else {
+                    versionLabel.setText("未インストール");
+                }
+                statusLabel.setText(result.message());
+            });
+        });
+        loader.setDaemon(true);
+        loader.start();
+    }
+
+    private void updateYtDlpAsync(DependencyManager dependencyManager, Label versionLabel, Label statusLabel, ProgressIndicator spinner, Button updateButton) {
+        spinner.setVisible(true);
+        spinner.setManaged(true);
+        spinner.setProgress(ProgressIndicator.INDETERMINATE_PROGRESS);
+        updateButton.setDisable(true);
+        statusLabel.setText("yt-dlpを更新中...");
+
+        Thread updater = new Thread(() -> {
+            DependencyManager.YtDlpUpdateResult updateResult = dependencyManager.updateYtDlp();
+            DependencyManager.YtDlpVersionResult versionResult = dependencyManager.getYtDlpVersion();
+
+            Platform.runLater(() -> {
+                spinner.setVisible(false);
+                spinner.setManaged(false);
+                updateButton.setDisable(false);
+                if (versionResult.version() != null) {
+                    versionLabel.setText(versionResult.version());
+                } else {
+                    versionLabel.setText("未インストール");
+                }
+                String message = updateResult.message();
+                if (updateResult.success() && versionResult.version() != null) {
+                    message = updateResult.message() + " (現在: " + versionResult.version() + ")";
+                }
+                statusLabel.setText(message);
+            });
+        });
+        updater.setDaemon(true);
+        updater.start();
     }
 }
