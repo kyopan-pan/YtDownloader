@@ -3,6 +3,7 @@ package com.kyopan_pan.ytdownloader;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.input.ClipboardContent;
@@ -10,6 +11,7 @@ import javafx.scene.input.Dragboard;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.scene.shape.SVGPath;
@@ -90,10 +92,45 @@ public class HelloApplication extends Application {
         });
 
         fileListView.setCellFactory(param -> new ListCell<>() {
+            private final Label nameLabel = new Label();
+            private final Button deleteBtn = new Button();
+            private final Region spacer = new Region();
+            private final HBox container = new HBox(10, nameLabel, spacer, deleteBtn);
+
+            {
+                nameLabel.getStyleClass().add("file-name");
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                container.setAlignment(Pos.CENTER_LEFT);
+                container.getStyleClass().add("file-row");
+
+                deleteBtn.setGraphic(buildDeleteIcon());
+                deleteBtn.getStyleClass().add("delete-btn");
+                deleteBtn.setFocusTraversable(false);
+                deleteBtn.setOnAction(event -> {
+                    File target = getItem();
+                    if (target != null && target.exists()) {
+                        boolean removed = target.delete();
+                        if (removed) {
+                            fileListView.getItems().remove(target);
+                        } else {
+                            System.err.println("Failed to delete file: " + target.getAbsolutePath());
+                        }
+                    }
+                    event.consume();
+                });
+            }
+
             @Override
             protected void updateItem(File item, boolean empty) {
                 super.updateItem(item, empty);
-                setText((empty || item == null) ? null : item.getName());
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    nameLabel.setText(item.getName());
+                    setText(null);
+                    setGraphic(container);
+                }
             }
         });
 
@@ -213,6 +250,15 @@ public class HelloApplication extends Application {
         icon.getStyleClass().add("download-icon");
         icon.setScaleX(1.05);
         icon.setScaleY(1.05);
+        return icon;
+    }
+
+    private SVGPath buildDeleteIcon() {
+        SVGPath icon = new SVGPath();
+        icon.setContent("M18.3 5.71a1 1 0 00-1.41 0L12 10.59 7.11 5.7A1 1 0 105.7 7.11L10.59 12l-4.9 4.89a1 1 0 101.41 1.41L12 13.41l4.89 4.9a1 1 0 001.41-1.41L13.41 12l4.9-4.89a1 1 0 000-1.4z");
+        icon.getStyleClass().add("delete-icon");
+        icon.setScaleX(0.92);
+        icon.setScaleY(0.92);
         return icon;
     }
 }

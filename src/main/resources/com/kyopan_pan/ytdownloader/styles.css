@@ -26,7 +26,7 @@
 }
 
 .download-btn {
-    -fx-background-color: linear-gradient(135deg, #4cc9f0, #0ea5e9);
+    -fx-background-color: linear-gradient(to bottom right, #4cc9f0, #0ea5e9);
     -fx-background-radius: 14;
     -fx-padding: 12;
     -fx-cursor: hand;
@@ -34,11 +34,11 @@
 }
 
 .download-btn:hover {
-    -fx-background-color: linear-gradient(135deg, #67e8f9, #38bdf8);
+    -fx-background-color: linear-gradient(to bottom right, #67e8f9, #38bdf8);
 }
 
 .download-btn:pressed {
-    -fx-background-color: linear-gradient(135deg, #0891b2, #0284c7);
+    -fx-background-color: linear-gradient(to bottom right, #0891b2, #0284c7);
 }
 
 .download-btn.busy {
@@ -46,11 +46,11 @@
 }
 
 .download-btn.success {
-    -fx-background-color: linear-gradient(135deg, #22c55e, #16a34a);
+    -fx-background-color: linear-gradient(to bottom right, #22c55e, #16a34a);
 }
 
 .download-btn.error {
-    -fx-background-color: linear-gradient(135deg, #f43f5e, #e11d48);
+    -fx-background-color: linear-gradient(to bottom right, #f43f5e, #e11d48);
 }
 
 .download-icon {
@@ -99,6 +99,39 @@
     -fx-text-fill: white;
 }
 
+.downloads-list .file-row {
+    -fx-alignment: center-left;
+}
+
+.downloads-list .file-name {
+    -fx-text-fill: #e5e7eb;
+    -fx-font-size: 13px;
+}
+
+.downloads-list .delete-btn {
+    -fx-background-color: transparent;
+    -fx-padding: 6;
+    -fx-background-radius: 10;
+    -fx-cursor: hand;
+    -fx-min-width: 28;
+    -fx-min-height: 28;
+}
+
+.downloads-list .delete-btn:hover {
+    -fx-background-color: rgba(239, 68, 68, 0.14);
+}
+
+.downloads-list .delete-btn:pressed {
+    -fx-background-color: rgba(239, 68, 68, 0.24);
+}
+
+.delete-icon {
+    -fx-fill: #cbd5e1;
+}
+
+.downloads-list .delete-btn:hover .delete-icon {
+    -fx-fill: #fca5a5;
+}
 .downloads-list .scroll-bar:vertical {
     -fx-background-color: transparent;
 }

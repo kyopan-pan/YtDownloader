@@ -33,14 +33,14 @@
 ### 実行コマンド
 Javaの `ProcessBuilder` を介して、以下の構成でシェルコマンドを実行しています。
 
-| 項目 | 設定値 | 備考 |
-| :--- | :--- | :--- |
-| **実行バイナリ** | `/usr/local/bin/yt-dlp` | Intel Macの場合の絶対パス |
-| **オプション1** | `--no-playlist` | プレイリスト除外 |
-| **オプション2** | `-f "bv+ba/b"` | 最高画質+最高音質 |
-| **オプション3** | `--merge-output-format mp4` | ffmpegによる結合 |
-| **出力パス** | `~/Movies/ytdl/%(title)s.%(ext)s` | |
-| **環境変数** | `PATH` に `/usr/local/bin` を追加 | ffmpeg認識用 |
+| 項目         | 設定値                               | 備考                |
+|:-----------|:----------------------------------|:------------------|
+| **実行バイナリ** | `/usr/local/bin/yt-dlp`           | Intel Macの場合の絶対パス |
+| **オプション1** | `--no-playlist`                   | プレイリスト除外          |
+| **オプション2** | `-f "bv+ba/b"`                    | 最高画質+最高音質         |
+| **オプション3** | `--merge-output-format mp4`       | ffmpegによる結合       |
+| **出力パス**   | `~/Movies/ytdl/%(title)s.%(ext)s` |                   |
+| **環境変数**   | `PATH` に `/usr/local/bin` を追加     | ffmpeg認識用         |
 
 ### 非同期処理
 * UIフリーズ防止のため、コマンド実行は別スレッド (Worker Thread) で行う。
