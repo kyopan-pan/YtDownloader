@@ -34,6 +34,7 @@ public class DownloadExecutor {
     }
 
     public void download(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
+        logStep("URL入力を受信: " + url);
         ProgressIndicator spinner = buildSpinner();
         btn.setDisable(true);
         btn.setGraphic(spinner);
@@ -48,7 +49,11 @@ public class DownloadExecutor {
 
     private void runDownload(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
         try {
-            boolean success = isAnimeThemesUrl(url)
+            logStep("バックグラウンド処理を開始。URL判定中...");
+            boolean animeThemes = isAnimeThemesUrl(url);
+            logStep(animeThemes ? "AnimeThemes URLと判定。専用パイプラインを使用します。" : "通常のyt-dlpダウンロードを使用します。");
+
+            boolean success = animeThemes
                     ? runAnimeThemesPipeline(url)
                     : runStandardDownload(url);
             Platform.runLater(() -> handleFinish(success, btn, downloadIcon, onSuccess));
@@ -59,13 +64,17 @@ public class DownloadExecutor {
     }
 
     private boolean runStandardDownload(String url) throws Exception {
+        String outputTemplate = DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s";
+        logStep("yt-dlpを通常モードで起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
+        long start = System.nanoTime();
+
         ProcessBuilder pb = new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
                 "-f", "bv+ba/b",
                 "--merge-output-format", "mp4",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
-                "-o", DownloadConfig.DOWNLOAD_DIR + "/%(title)s.%(ext)s",
+                "-o", outputTemplate,
                 url
         );
 
@@ -74,13 +83,16 @@ public class DownloadExecutor {
         Process process = pb.start();
         consumeStream(process.getInputStream(), true);
         int exitCode = process.waitFor();
+        logStep("yt-dlp（通常モード）終了。exit=" + exitCode + " / " + formatDuration(System.nanoTime() - start));
         return exitCode == 0;
     }
 
     private boolean runAnimeThemesPipeline(String url) throws Exception {
+        logStep("AnimeThemesモード: ファイル名を取得します。");
         String originalName = fetchFilename(url);
         String mp4Name = toMp4Name(originalName);
         Path outputPath = Paths.get(DownloadConfig.DOWNLOAD_DIR, mp4Name);
+        logStep("AnimeThemesモード: 取得した名前=" + originalName + " / 出力ファイル=" + outputPath);
 
         // 1. yt-dlp: 標準出力(-)にデータを流す設定
         ProcessBuilder ytDlp = new ProcessBuilder(
@@ -123,6 +135,9 @@ public class DownloadExecutor {
         addBinDirToPath(ffmpeg);
 
         // パイプラインの実行（ダウンロードと変換を同時に行うため高速）
+        logStep("AnimeThemesモード: yt-dlp→ffmpegパイプラインを起動します。");
+        long ytStart = System.nanoTime();
+        long ffStart = ytStart;
         List<Process> pipeline = ProcessBuilder.startPipeline(List.of(ytDlp, ffmpeg));
         Process ytProcess = pipeline.get(0);
         Process ffmpegProcess = pipeline.get(1);
@@ -134,7 +149,9 @@ public class DownloadExecutor {
         Thread ffLogs = consumeAsync(ffmpegProcess.getErrorStream(), false);
 
         int ytExit = ytProcess.waitFor();
+        logStep("yt-dlp（AnimeThemes）終了。exit=" + ytExit + " / " + formatDuration(System.nanoTime() - ytStart));
         int ffExit = ffmpegProcess.waitFor();
+        logStep("ffmpeg（AnimeThemes）終了。exit=" + ffExit + " / " + formatDuration(System.nanoTime() - ffStart));
 
         ytLogs.join();
         ffLogs.join();
@@ -144,6 +161,8 @@ public class DownloadExecutor {
     }
 
     private String fetchFilename(String url) throws Exception {
+        logStep("ファイル名を yt-dlp --get-filename で取得中...");
+        long start = System.nanoTime();
         ProcessBuilder pb = new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
@@ -172,9 +191,12 @@ public class DownloadExecutor {
         }
         int exitCode = process.waitFor();
         if (exitCode != 0 || name == null || name.isBlank()) {
+            logStep("ファイル名の取得に失敗。fallback名を生成します。(exit=" + exitCode + ")");
             System.err.println("Failed to resolve filename from yt-dlp (exit=" + exitCode + "). Output:\n" + String.join("\n", lines));
             return fallbackFilename(url);
         }
+        logStep("ファイル名の取得に成功: " + name);
+        logStep("ファイル名取得の所要時間: " + formatDuration(System.nanoTime() - start));
         return name;
     }
 
@@ -212,6 +234,7 @@ public class DownloadExecutor {
 
     private void addBinDirToPath(ProcessBuilder pb) {
         String currentPath = System.getenv("PATH");
+        logStep("PATHにbinディレクトリを追加: " + DownloadConfig.BIN_DIR);
         pb.environment().put("PATH", DownloadConfig.BIN_DIR + File.pathSeparator + (currentPath != null ? currentPath : ""));
     }
 
@@ -321,5 +344,17 @@ public class DownloadExecutor {
         public static ProgressUpdate hidden() {
             return new ProgressUpdate("", 0, false);
         }
+    }
+
+    private void logStep(String message) {
+        System.out.println("[DownloadExecutor] " + message);
+    }
+
+    private String formatDuration(long nanos) {
+        double millis = nanos / 1_000_000.0;
+        if (millis >= 1000) {
+            return String.format("%.2f s", millis / 1000.0);
+        }
+        return String.format("%.1f ms", millis);
     }
 }
