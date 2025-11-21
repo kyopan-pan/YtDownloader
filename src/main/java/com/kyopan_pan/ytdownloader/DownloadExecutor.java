@@ -8,8 +8,22 @@ import javafx.scene.shape.SVGPath;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class DownloadExecutor {
+
+    private static final Pattern PERCENT_PATTERN = Pattern.compile("(\\d{1,3}(?:\\.\\d+)?)%");
+    private final Consumer<ProgressUpdate> progressConsumer;
+
+    public DownloadExecutor() {
+        this(null);
+    }
+
+    public DownloadExecutor(Consumer<ProgressUpdate> progressConsumer) {
+        this.progressConsumer = progressConsumer;
+    }
 
     public void download(String url, Button btn, SVGPath downloadIcon, Runnable onSuccess) {
         ProgressIndicator spinner = buildSpinner();
@@ -19,6 +33,7 @@ public class DownloadExecutor {
         if (!btn.getStyleClass().contains("busy")) {
             btn.getStyleClass().add("busy");
         }
+        sendProgress(ProgressUpdate.infoLoading());
 
         new Thread(() -> runDownload(url, btn, downloadIcon, onSuccess)).start();
     }
@@ -71,6 +86,7 @@ public class DownloadExecutor {
         }
         btn.setGraphic(downloadIcon);
         resetButtonStateLater(btn, downloadIcon);
+        sendProgress(ProgressUpdate.hidden());
     }
 
     private ProgressIndicator buildSpinner() {
@@ -100,9 +116,50 @@ public class DownloadExecutor {
             String line;
             while ((line = reader.readLine()) != null) {
                 System.out.println(line);
+                Double percent = extractPercent(line);
+                if (percent != null) {
+                    sendProgress(ProgressUpdate.downloading(percent));
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private Double extractPercent(String line) {
+        Matcher matcher = PERCENT_PATTERN.matcher(line);
+        if (matcher.find()) {
+            try {
+                return Double.parseDouble(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private void sendProgress(ProgressUpdate update) {
+        if (progressConsumer == null || update == null) {
+            return;
+        }
+        Platform.runLater(() -> progressConsumer.accept(update));
+    }
+
+    public record ProgressUpdate(String message, double progress, boolean visible) {
+        public boolean indeterminate() {
+            return progress < 0;
+        }
+
+        public static ProgressUpdate infoLoading() {
+            return new ProgressUpdate("動画読み込み中...", ProgressIndicator.INDETERMINATE_PROGRESS, true);
+        }
+
+        public static ProgressUpdate downloading(double percent) {
+            double clamped = Math.max(0, Math.min(percent, 100));
+            return new ProgressUpdate(String.format("ダウンロード中... %.1f%%", clamped), clamped / 100.0, true);
+        }
+
+        public static ProgressUpdate hidden() {
+            return new ProgressUpdate("", 0, false);
         }
     }
 }

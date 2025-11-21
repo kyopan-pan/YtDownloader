@@ -25,6 +25,40 @@
     -fx-effect: dropshadow(gaussian, rgba(56, 189, 248, 0.38), 14, 0.45, 0, 8);
 }
 
+.progress-box {
+    -fx-background-color: rgba(255, 255, 255, 0.05);
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-padding: 10 12;
+}
+
+.progress-box.idle {
+    -fx-opacity: 0.6;
+}
+
+.progress-label {
+    -fx-text-fill: #cbd5e1;
+    -fx-font-size: 12px;
+    -fx-font-weight: 600;
+}
+
+.progress-bar {
+    -fx-accent: #38bdf8;
+    -fx-background-radius: 8;
+    -fx-padding: 2;
+}
+
+.progress-bar > .track {
+    -fx-background-radius: 8;
+    -fx-background-color: rgba(255, 255, 255, 0.12);
+}
+
+.progress-bar > .bar {
+    -fx-background-radius: 8;
+    -fx-background-color: linear-gradient(to right, #38bdf8, #0ea5e9);
+}
+
 .download-btn {
     -fx-background-color: linear-gradient(to bottom right, #4cc9f0, #0ea5e9);
     -fx-background-radius: 14;
