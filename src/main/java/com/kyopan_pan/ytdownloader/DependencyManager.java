@@ -6,7 +6,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -118,11 +117,29 @@ public class DependencyManager {
         // Mac用のバイナリURL
         String downloadUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
 
-        AppLogger.log("[DependencyManager] Downloading yt-dlp from " + downloadUrl);
-        try (InputStream in = URI.create(downloadUrl).toURL().openStream()) {
-            Files.copy(in, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        AppLogger.log("[DependencyManager] Downloading yt-dlp via curl from " + downloadUrl);
+
+        // JavaのSSL機能を使わず、macOS標準のcurlコマンドに委譲する
+        ProcessBuilder pb = new ProcessBuilder("curl", "-L", "-o", destination.getAbsolutePath(), downloadUrl);
+        pb.redirectErrorStream(true);
+
+        try {
+            Process process = pb.start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                while (reader.readLine() != null) {
+                    // discard output to avoid buffer filling
+                }
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new IOException("curlによるダウンロードに失敗しました。Exit code: " + exitCode);
+            }
+
             makeExecutable(destination.toPath());
             AppLogger.log("[DependencyManager] yt-dlp ready: " + destination.getAbsolutePath());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("ダウンロードが中断されました", e);
         }
     }
 
