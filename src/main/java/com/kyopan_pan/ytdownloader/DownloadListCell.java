@@ -47,7 +47,7 @@ public class DownloadListCell extends ListCell<File> {
         deleteBtn.setOnAction(event -> {
             File target = getItem();
             if (target != null) {
-                onDelete.accept(target);
+                this.onDelete.accept(target);
             }
             event.consume();
         });

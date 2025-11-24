@@ -15,7 +15,7 @@ public class DownloadsManager {
         try {
             Files.createDirectories(Paths.get(DownloadConfig.getDownloadDir()));
         } catch (Exception e) {
-            e.printStackTrace();
+            AppLogger.logError("[DownloadsManager] Failed to create download directory: " + DownloadConfig.getDownloadDir(), e);
         }
     }
 
@@ -28,7 +28,7 @@ public class DownloadsManager {
                     .sorted(Comparator.comparingLong(File::lastModified).reversed())
                     .collect(Collectors.toList());
         } catch (Exception e) {
-            e.printStackTrace();
+            AppLogger.logError("[DownloadsManager] Failed to load recent videos from " + DownloadConfig.getDownloadDir(), e);
             return Collections.emptyList();
         }
     }

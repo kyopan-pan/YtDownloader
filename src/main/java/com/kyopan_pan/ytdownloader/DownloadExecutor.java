@@ -90,7 +90,7 @@ public class DownloadExecutor {
             }
             Platform.runLater(() -> handleFinish(success, btn, downloadIcon, successIcon, onSuccess));
         } catch (Exception ex) {
-            ex.printStackTrace();
+            AppLogger.logError("[DownloadExecutor] ダウンロード処理中に例外が発生しました", ex);
             if (cancelRequested) {
                 Platform.runLater(() -> handleCancelled(btn, downloadIcon));
             } else {
@@ -203,9 +203,9 @@ public class DownloadExecutor {
 
     private String fetchTitleWithCurl(String url) {
         logStep("curlでtitleタグ取得を試行中...");
-        CommandResult result = collectOutput("curl（title取得）",
-                new ProcessBuilder("curl", "-Ls", "-m", "5", url),
-                12000);
+        CommandResult result = collectOutput(
+                new ProcessBuilder("curl", "-Ls", "-m", "5", url)
+        );
         if (!result.success()) {
             logStep("curlが非0終了(exit=" + result.exitCode() + ")。");
             return null;
@@ -267,7 +267,7 @@ public class DownloadExecutor {
                 if (seg.equalsIgnoreCase("anime") && filtered.size() > 1) {
                     continue;
                 }
-                picked.addFirst(seg); // preserve original order
+                picked.addFirst(seg); // 元の順序を保つため先頭に追加する
             }
 
             if (picked.isEmpty()) {
@@ -413,7 +413,8 @@ public class DownloadExecutor {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            String label = (sourceLabel == null || sourceLabel.isBlank()) ? "" : " (" + sourceLabel + ")";
+            AppLogger.logError("[DownloadExecutor] プロセスストリームの読み取りで例外が発生しました" + label, e);
         }
     }
 
@@ -586,20 +587,20 @@ public class DownloadExecutor {
         }
     }
 
-    private CommandResult collectOutput(String label, ProcessBuilder builder, int maxChars) {
+    private CommandResult collectOutput(ProcessBuilder builder) {
         prepareProcess(builder, true);
-        long start = logProcessStart(label);
+        long start = logProcessStart("curl（title取得）");
         Process process = null;
         try {
             process = builder.start();
             registerProcess(process);
-            String output = readLimited(process.getInputStream(), maxChars);
+            String output = readLimited(process.getInputStream());
             int exitCode = waitForProcess(process);
-            logProcessEnd(label, start, exitCode);
+            logProcessEnd("curl（title取得）", start, exitCode);
             return new CommandResult(exitCode, output);
         } catch (Exception e) {
-            logStep(label + " の実行に失敗: " + e.getMessage());
-            logProcessEnd(label, start, -1);
+            logStep("curl（title取得）" + " の実行に失敗: " + e.getMessage());
+            logProcessEnd("curl（title取得）", start, -1);
             return new CommandResult(-1, "");
         } finally {
             if (process != null) {
@@ -608,20 +609,20 @@ public class DownloadExecutor {
         }
     }
 
-    private String readLimited(InputStream stream, int maxChars) throws IOException {
+    private String readLimited(InputStream stream) throws IOException {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             StringBuilder out = new StringBuilder();
             String line;
-            while ((line = reader.readLine()) != null && out.length() < maxChars) {
-                if (out.length() + line.length() + 1 > maxChars) {
-                    int remaining = maxChars - out.length();
+            while ((line = reader.readLine()) != null && out.length() < 12000) {
+                if (out.length() + line.length() + 1 > 12000) {
+                    int remaining = 12000 - out.length();
                     if (remaining > 0) {
                         out.append(line, 0, remaining);
                     }
                     break;
                 }
                 out.append(line);
-                if (out.length() < maxChars) {
+                if (out.length() < 12000) {
                     out.append('\n');
                 }
             }

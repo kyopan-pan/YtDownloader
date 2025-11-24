@@ -48,8 +48,7 @@ public class DependencyManager {
             }
 
         } catch (Exception e) {
-            AppLogger.log("[DependencyManager] ensureBinaries failed: " + e.getMessage());
-            e.printStackTrace();
+            AppLogger.logError("[DependencyManager] ensureBinaries failed", e);
         }
         AppLogger.log("[DependencyManager] Initial setup: ensureBinaries finished");
     }
@@ -132,7 +131,7 @@ public class DependencyManager {
             Process process = pb.start();
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 while (reader.readLine() != null) {
-                    // discard output to avoid buffer filling
+                    // バッファあふれを避けるため出力は破棄する
                 }
             }
             int exitCode = process.waitFor();
