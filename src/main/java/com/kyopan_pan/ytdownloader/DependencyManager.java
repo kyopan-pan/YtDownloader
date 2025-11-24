@@ -1,16 +1,11 @@
 package com.kyopan_pan.ytdownloader;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
-import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 public class DependencyManager {
@@ -91,6 +86,7 @@ public class DependencyManager {
         }
     }
 
+    // yt-dlpのバージョン確認および、初期設定を行うメソッド
     public YtDlpUpdateResult updateYtDlp() {
         File binDir = new File(DownloadConfig.BIN_DIR);
         if (!binDir.exists() && !binDir.mkdirs()) {
@@ -100,6 +96,15 @@ public class DependencyManager {
         try {
             AppLogger.log("[DependencyManager] Updating yt-dlp to latest...");
             downloadYtDlp(ytDlp);
+
+            // === ffmpeg も同時にチェックして復元する ===
+            File ffmpeg = new File(DownloadConfig.getFfmpegPath());
+            if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
+                AppLogger.log("[DependencyManager] ffmpeg missing or invalid during update. Restoring...");
+                copyFfmpegFromResources(ffmpeg);
+            }
+            // ============================================
+
             return new YtDlpUpdateResult(true, "yt-dlpを更新しました。");
         } catch (IOException e) {
             AppLogger.log("[DependencyManager] Failed to update yt-dlp: " + e.getMessage());
