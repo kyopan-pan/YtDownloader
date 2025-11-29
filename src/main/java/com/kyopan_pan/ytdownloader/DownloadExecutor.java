@@ -103,12 +103,13 @@ public class DownloadExecutor {
 
     private boolean runStandardDownload(String url) throws Exception {
         String outputTemplate = DownloadConfig.getDownloadDir() + "/%(title)s.%(ext)s";
-        logStep("yt-dlpを通常モードで起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
+        logStep("yt-dlpを通常モード(H.264優先)で起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
 
         ProcessBuilder pb = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
-                "-f", "bv+ba/b",
+                "-S", "vcodec:h264,res,acodec:m4a",
+                "--match-filter", "vcodec~='(?i)^(avc|h264)'",
                 "--merge-output-format", "mp4",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
                 "-o", outputTemplate,
@@ -116,9 +117,33 @@ public class DownloadExecutor {
         ), true);
 
         Process process = pb.start();
-        TrackedProcess tracked = monitorProcess("yt-dlp（通常モード）", process, true, false, "yt-dlp");
+        TrackedProcess tracked = monitorProcess("yt-dlp（H.264優先）", process, true, false, "yt-dlp");
         int exitCode = awaitProcess(tracked);
-        return succeeded(exitCode);
+        
+        if (succeeded(exitCode)) {
+            return true;
+        }
+        
+        if (cancelRequested) {
+            return false;
+        }
+        
+        logStep("H.264形式が見つからないため、互換モード(720p以下+変換)で再試行します。");
+        
+        ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(
+                DownloadConfig.getYtDlpPath(),
+                "--no-playlist",
+                "-f", "bv*[height<=720]+ba/b[height<=720]",
+                "--recode-video", "mp4",
+                "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
+                "-o", outputTemplate,
+                url
+        ), true);
+        
+        Process processFallback = pbFallback.start();
+        TrackedProcess trackedFallback = monitorProcess("yt-dlp（互換モード）", processFallback, true, false, "yt-dlp");
+        int exitCodeFallback = awaitProcess(trackedFallback);
+        return succeeded(exitCodeFallback);
     }
 
     private boolean runAnimeThemesPipeline(String url) throws Exception {
