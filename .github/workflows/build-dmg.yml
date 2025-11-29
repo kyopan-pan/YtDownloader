@@ -64,3 +64,9 @@ jobs:
             --java-options "--enable-preview" \
             --vendor "kyopan_pan" \
             --verbose
+      # 作成したdmgファイルをアーティファクトとしてアップロード
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: YtDownloader-DMG-${{ matrix.os }}
+          path: target/installer/*.dmg
