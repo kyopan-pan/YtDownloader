@@ -59,7 +59,7 @@ jobs:
             --name "YtDownloader" \
             --app-version "${{ env.APP_VERSION }}" \
             --icon "docs/icon.icns" \
-            --module-path "target/modules:target/ytdownloader.jar"
+            --module-path "target/modules:target/ytdownloader.jar" \
             --module "com.kyopan_pan.ytdownloader/com.kyopan_pan.ytdownloader.HelloApplication" \
             --java-options "--enable-preview" \
             --vendor "kyopan_pan" \
