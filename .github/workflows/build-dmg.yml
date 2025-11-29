@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         # macos-13 is Intel (x86_64), macos-14 is Apple Silicon (aarch64)
-        os: [ macos-13, macos-14 ]
+        os: [ macos-14, macos-15, macos-26 ]
         include:
           - os: macos-14
             arch: aarch64
