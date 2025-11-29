@@ -12,9 +12,11 @@ jobs:
         # macos-13 is Intel (x86_64), macos-14 is Apple Silicon (aarch64)
         os: [ macos-13, macos-14 ]
         include:
-          - os: macos-13
-            arch: x64
           - os: macos-14
+            arch: aarch64
+          - os: macos-15
+            arch: aarch64
+          - os: macos-26
             arch: aarch64
 
     runs-on: ${{ matrix.os }}
