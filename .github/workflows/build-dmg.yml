@@ -1,0 +1,64 @@
+name: Build DMG
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        # macos-13 is Intel (x86_64), macos-14 is Apple Silicon (aarch64)
+        os: [ macos-13, macos-14 ]
+        include:
+          - os: macos-13
+            arch: x64
+          - os: macos-14
+            arch: aarch64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # pom.xml からバージョンを取得して環境変数 APP_VERSION にセット
+      - name: Extract version from pom.xml
+        run: |
+          # Mavenコマンドで project.version を取得 (-q -DforceStdout で余計なログを抑制)
+          PROJECT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          
+          # macOSのアプリバージョンは "X.Y.Z" 形式である必要があるため、"-SNAPSHOT" がある場合は除去する処理推奨
+          # 例: 1.0-SNAPSHOT -> 1.0
+          CLEAN_VERSION=${PROJECT_VERSION//-SNAPSHOT/}
+          
+          echo "APP_VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
+          echo "Detected version: ${PROJECT_VERSION} -> Using for App: ${CLEAN_VERSION}"
+
+      - name: Build with Maven
+        run: mvn clean package
+
+      - name: Create DMG with jpackage
+        run: |
+          mvn dependency:copy-dependencies -DoutputDirectory=target/modules
+          
+          # ここで環境変数 APP_VERSION を使用
+          jpackage \
+            --type dmg \
+            --dest target/installer \
+            --name "YtDownloader" \
+            --app-version "${{ env.APP_VERSION }}" \
+            --icon "docs/icon.icns" \
+            --module-path "target/modules:target/ytdownloader.jar"
+            --module "com.kyopan_pan.ytdownloader/com.kyopan_pan.ytdownloader.HelloApplication" \
+            --java-options "--enable-preview" \
+            --vendor "kyopan_pan" \
+            --verbose
