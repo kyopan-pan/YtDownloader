@@ -15,14 +15,19 @@
     * ボタン押下でボタンを無効化しスピナーを表示、プログレスを「動画読み込み中...」で開始。
     * バックグラウンドスレッドでダウンロードし、終了後にUIスレッドへ処理を戻す。
     * ログに含まれる`XX%`を検出した場合はプログレスバーを更新。検出できない間は不確定状態。
+    * **進捗100%到達後**、完了イベントまでの間は「変換中...」を表示し、プログレスバーは不確定（indeterminate）状態に切り替える。
     * 成功時はボタンを`success`スタイルにしてリストを更新、失敗時は`error`スタイルにする。いずれも約2秒後に元の状態へ戻し、ボタンを再度操作可能にする。
 * **通常のダウンロード（共通パス）:**
-    * コマンド: `yt-dlp --no-playlist -f "bv+ba/b" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
+    * **H.264優先モード**: `yt-dlp --no-playlist -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
+    * **互換モード（フォールバック）**: H.264形式が見つからない場合、720p以下の動画を取得しGPU変換を実行。
+      * コマンド: `yt-dlp --no-playlist -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> -o ... <URL>`
+      * Apple Silicon GPU（VideoToolbox）を利用した高速変換。
     * 環境: `PATH` の先頭に `~/.ytdownloader/bin` を付与して`ProcessBuilder`経由で実行。
 * **AnimeThemes専用パイプライン:**
     * 対象: URLに`animethemes.moe`を含む場合に分岐。
-    * ファイル名決定: `yt-dlp --get-filename -o "%(title)s.%(ext)s"`の出力から推測し、取得失敗時はホスト名とパスを基にした`*.mp4`（タイムスタンプ付き）へフォールバック。
-    * コマンド: `yt-dlp --no-playlist -f "bv+ba/b" -o - <URL>` の出力を `ffmpeg -loglevel error -i pipe:0 -c:v libx264 -preset veryfast -c:a aac -b:a 192k -movflags +faststart -f mp4 -y <出力パス>` へパイプ。両プロセスの終了コードが0で成功扱い。
+    * ファイル名決定: curlでページのtitleタグから取得し、取得失敗時はURLパスを基にした`*.mp4`（タイムスタンプ付き）へフォールバック。
+    * コマンド: `yt-dlp --no-playlist -f "bv+ba/b" -o - <URL>` の出力を `ffmpeg -loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>` へパイプ。
+    * Apple Silicon GPU（VideoToolbox）を利用した高速変換。両プロセスの終了コードが0で成功扱い。
 * **保存先:** `~/Movies/YtDlpDownloads`（起動時に作成）。通常は`%(title)s.%(ext)s`で保存し、AnimeThemesは必ず`.mp4`に変換して保存。
 * **プレイリスト対応:** 常に `--no-playlist` で単体動画のみを対象。
 
@@ -49,7 +54,11 @@
 * **構成:**
     1. URL入力フィールド（プレースホルダ「YouTube URL...」）
     2. ダウンロードボタン（ダウンロードアイコン、処理中はスピナー表示）
-    3. 進行状況エリア（ラベル＋プログレスバー。「動画読み込み中...」「ダウンロード中...XX%」「待機中...」などを表示）
+    3. 進行状況エリア（ラベル＋プログレスバー。「動画読み込み中...」「ダウンロード中...XX%」「変換中...」「待機中...」などを表示）
     4. "Downloads" ラベル
     5. ダウンロード済みファイルリスト（削除ボタン付き、ドラッグ＆ドロップ可能）
 * **テーマ:** ダーク基調のグラデーション背景にシアン系アクセントカラーを使用。
+
+## 5. 開発環境
+* **起動（VS Code）:** `.vscode/launch.json` の「Launch YtDownloader」で起動。起動前に `mvn-compile` タスクでビルドする。Java 拡張が `ClassNotFoundException` を出す場合は、タスク「Run YtDownloader (Maven javafx:run)」で `mvn javafx:run` を実行する。
+* **デバッグ:** タスク「Run YtDownloader (Maven) with Debug」で `mvn javafx:run -Pdebug` を実行し、JDWP で待機したら、launch の「Attach to YtDownloader (port 5005)」でアタッチする。`pom.xml` の `debug` プロファイルが JDWP オプションを付与する。

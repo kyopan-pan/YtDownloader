@@ -21,6 +21,9 @@ public class DownloadExecutor {
 
     private static final String ANIME_THEMES_HOST = "animethemes.moe";
     private static final Pattern PERCENT_PATTERN = Pattern.compile("(\\d{1,3}(?:\\.\\d+)?)%");
+    private static final Pattern POST_PROCESSING_PATTERN = Pattern.compile(
+            "(?i)(\\[merger\\]|\\[ffmpeg\\]|\\[extractaudio\\]|\\[postprocess\\]|\\[video(?:convertor|converter)\\]|\\[audio(?:convertor|converter)\\]|\\[fixup\\w*\\]|Merging formats into|Post-process)"
+    );
     private final Consumer<ProgressUpdate> progressConsumer;
     private final Object processLock = new Object();
     private final List<Process> activeProcesses = new ArrayList<>();
@@ -28,6 +31,7 @@ public class DownloadExecutor {
     private volatile boolean downloadActive;
     private volatile boolean progressStarted;
     private volatile boolean cancelRequested;
+    private volatile boolean postProcessing;
     private volatile Thread workerThread;
     private Thread loadingElapsedThread;
 
@@ -128,13 +132,14 @@ public class DownloadExecutor {
             return false;
         }
         
-        logStep("H.264形式が見つからないため、互換モード(720p以下+変換)で再試行します。");
+        logStep("H.264形式が見つからないため、互換モード(720p以下+GPU変換)で再試行します。");
         
         ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
                 "-f", "bv*[height<=720]+ba/b[height<=720]",
                 "--recode-video", "mp4",
+                "--postprocessor-args", "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
                 "-o", outputTemplate,
                 url
@@ -174,9 +179,10 @@ public class DownloadExecutor {
                 "-f", "webm",
                 "-i", "pipe:0",
 
-                // 変換設定
-                "-c:v", "libx264",
-                "-preset", "veryfast",
+                // 変換設定（Apple Silicon GPU: VideoToolbox使用）
+                "-c:v", "h264_videotoolbox",
+                "-b:v", "5M",
+                "-pix_fmt", "yuv420p",
                 "-c:a", "aac",
                 "-b:a", "192k",
 
@@ -430,6 +436,17 @@ public class DownloadExecutor {
                 String labeled = (sourceLabel == null || sourceLabel.isBlank()) ? line : "[" + sourceLabel + "] " + line;
                 AppLogger.log(labeled);
                 if (parseProgress) {
+                    if (!postProcessing && isPostProcessingLine(line)) {
+                        markProgressStarted();
+                        postProcessing = true;
+                        logStep("後処理フェーズに移行します。");
+                        sendProgress(buildPostProcessingProgress());
+                        continue;
+                    }
+                    // 既に後処理中の場合は進捗更新をスキップ（変換中表示を維持）
+                    if (postProcessing) {
+                        continue;
+                    }
                     Double percent = extractPercent(line);
                     if (percent != null) {
                         markProgressStarted();
@@ -452,6 +469,13 @@ public class DownloadExecutor {
             }
         }
         return null;
+    }
+
+    private boolean isPostProcessingLine(String line) {
+        if (line == null || line.isBlank()) {
+            return false;
+        }
+        return POST_PROCESSING_PATTERN.matcher(line).find();
     }
 
     private void sendProgress(ProgressUpdate update) {
@@ -485,6 +509,10 @@ public class DownloadExecutor {
             return new ProgressUpdate(String.format("ダウンロード中... %.1f%%%s", clamped, formatElapsed(elapsed)), clamped / 100.0, true);
         }
 
+        public static ProgressUpdate postProcessing(String elapsed) {
+            return new ProgressUpdate("変換中..." + formatElapsed(elapsed), ProgressIndicator.INDETERMINATE_PROGRESS, true);
+        }
+
         public static ProgressUpdate hidden() {
             return new ProgressUpdate("", 0, false);
         }
@@ -506,6 +534,11 @@ public class DownloadExecutor {
         return ProgressUpdate.downloading(percent, elapsed);
     }
 
+    private ProgressUpdate buildPostProcessingProgress() {
+        String elapsed = formatElapsedForUi();
+        return ProgressUpdate.postProcessing(elapsed);
+    }
+
     private ProgressUpdate buildLoadingProgress() {
         return ProgressUpdate.infoLoading(formatElapsedForUi());
     }
@@ -515,6 +548,7 @@ public class DownloadExecutor {
         downloadActive = true;
         progressStarted = false;
         cancelRequested = false;
+        postProcessing = false;
     }
 
     private void clearDownloadStart() {
@@ -522,6 +556,7 @@ public class DownloadExecutor {
         downloadActive = false;
         progressStarted = false;
         cancelRequested = false;
+        postProcessing = false;
         Thread ticker = loadingElapsedThread;
         if (ticker != null) {
             ticker.interrupt();
