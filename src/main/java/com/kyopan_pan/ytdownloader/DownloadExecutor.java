@@ -112,6 +112,9 @@ public class DownloadExecutor {
         ProcessBuilder pb = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
+                "--extractor-args", "youtube:player_client=web",
+                "--extractor-args", "youtube:skip=translated_subs",
+                "--concurrent-fragments", "4",
                 "-S", "vcodec:h264,res,acodec:m4a",
                 "--match-filter", "vcodec~='(?i)^(avc|h264)'",
                 "--merge-output-format", "mp4",
@@ -137,6 +140,9 @@ public class DownloadExecutor {
         ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
+                "--extractor-args", "youtube:player_client=web",
+                "--extractor-args", "youtube:skip=translated_subs",
+                "--concurrent-fragments", "4",
                 "-f", "bv*[height<=720]+ba/b[height<=720]",
                 "--recode-video", "mp4",
                 "--postprocessor-args", "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p",
@@ -161,6 +167,7 @@ public class DownloadExecutor {
         ProcessBuilder ytDlp = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
+                "--concurrent-fragments", "4",
                 "-f", "bv+ba/b", // ベスト画質+ベスト音質
                 "-o", "-",       // 標準出力へ
                 url

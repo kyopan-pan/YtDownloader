@@ -18,15 +18,16 @@
     * **進捗100%到達後**、完了イベントまでの間は「変換中...」を表示し、プログレスバーは不確定（indeterminate）状態に切り替える。
     * 成功時はボタンを`success`スタイルにしてリストを更新、失敗時は`error`スタイルにする。いずれも約2秒後に元の状態へ戻し、ボタンを再度操作可能にする。
 * **通常のダウンロード（共通パス）:**
-    * **H.264優先モード**: `yt-dlp --no-playlist -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
+    * **H.264優先モード**: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
     * **互換モード（フォールバック）**: H.264形式が見つからない場合、720p以下の動画を取得しGPU変換を実行。
-      * コマンド: `yt-dlp --no-playlist -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> -o ... <URL>`
+      * コマンド: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> -o ... <URL>`
       * Apple Silicon GPU（VideoToolbox）を利用した高速変換。
+    * **速度最適化:** 動画読み込み（メタデータ取得）短縮のため `--extractor-args "youtube:player_client=web"`（取得クライアントを web に限定）と `youtube:skip=translated_subs`（字幕翻訳取得をスキップ）を付与。DASH/HLS の並列取得のため `--concurrent-fragments 4` を付与。`youtube:` の extractor-args は YouTube 以外では無視される。
     * 環境: `PATH` の先頭に `~/.ytdownloader/bin` を付与して`ProcessBuilder`経由で実行。
 * **AnimeThemes専用パイプライン:**
     * 対象: URLに`animethemes.moe`を含む場合に分岐。
     * ファイル名決定: curlでページのtitleタグから取得し、取得失敗時はURLパスを基にした`*.mp4`（タイムスタンプ付き）へフォールバック。
-    * コマンド: `yt-dlp --no-playlist -f "bv+ba/b" -o - <URL>` の出力を `ffmpeg -loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>` へパイプ。
+    * コマンド: `yt-dlp --no-playlist --concurrent-fragments 4 -f "bv+ba/b" -o - <URL>` の出力を `ffmpeg -loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>` へパイプ。
     * Apple Silicon GPU（VideoToolbox）を利用した高速変換。両プロセスの終了コードが0で成功扱い。
 * **保存先:** `~/Movies/YtDlpDownloads`（起動時に作成）。通常は`%(title)s.%(ext)s`で保存し、AnimeThemesは必ず`.mp4`に変換して保存。
 * **プレイリスト対応:** 常に `--no-playlist` で単体動画のみを対象。
@@ -43,6 +44,11 @@
 * **トリガー:** ダウンロード済み各行右端の×ボタン。
 * **動作:** 対象の`.mp4`を`File.delete()`で即削除。成功時のみリストを更新。
 * **失敗時:** 標準エラーへログ出力のみで、UI上の表示は変更しない。確認ダイアログなし。
+
+### E. ログ機能
+* **ログ表示:** メニュー「ログ...」からログ画面を開き、セッション中のログを一覧表示。アプリ終了でクリア。
+* **コピー:** 「直近10分をコピー」で直近10分のログをクリップボードへコピー。
+* **表示クリア:** 「表示をクリア」でログ一覧を消去。
 
 ## 3. 内部ロジック仕様 (Backend)
 * **依存関係の自動セットアップ:** 起動時にバックグラウンドで `~/.ytdownloader/bin` を準備。yt-dlpをGitHubからダウンロードし、`src/main/resources/bin/ffmpeg` をコピーしてPOSIX実行権を付与。

@@ -244,12 +244,24 @@
     -fx-cursor: hand;
 }
 
-.log-clear-btn:hover {
+.log-copy-btn {
+    -fx-background-color: rgba(226, 232, 240, 0.08);
+    -fx-text-fill: #e2e8f0;
+    -fx-border-color: rgba(255, 255, 255, 0.12);
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12;
+    -fx-cursor: hand;
+}
+
+.log-clear-btn:hover,
+.log-copy-btn:hover {
     -fx-background-color: rgba(59, 130, 246, 0.18);
     -fx-border-color: rgba(59, 130, 246, 0.32);
 }
 
-.log-clear-btn:pressed {
+.log-clear-btn:pressed,
+.log-copy-btn:pressed {
     -fx-background-color: rgba(59, 130, 246, 0.26);
 }
 

@@ -18,6 +18,7 @@ import javafx.stage.Stage;
 
 import java.io.File;
 import java.net.URL;
+import java.time.Duration;
 import java.util.Collections;
 
 public class HelloApplication extends Application {
@@ -611,7 +612,16 @@ public class HelloApplication extends Application {
             clearBtn.getStyleClass().add("log-clear-btn");
             clearBtn.setOnAction(event -> AppLogger.clear());
 
-            HBox actionRow = new HBox(10, subtitle, spacer, clearBtn);
+            Button copyBtn = new Button("直近10分をコピー");
+            copyBtn.getStyleClass().add("log-copy-btn");
+            copyBtn.setOnAction(event -> {
+                String recentLogs = AppLogger.buildRecentLogSnapshot(Duration.ofMinutes(10));
+                ClipboardContent content = new ClipboardContent();
+                content.putString(recentLogs);
+                Clipboard.getSystemClipboard().setContent(content);
+            });
+
+            HBox actionRow = new HBox(10, subtitle, spacer, copyBtn, clearBtn);
             actionRow.setAlignment(Pos.CENTER_LEFT);
 
             VBox root = new VBox(10, header, logListView, actionRow);
