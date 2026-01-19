@@ -284,36 +284,58 @@ public class HelloApplication extends Application {
         heroRow.setAlignment(Pos.CENTER_LEFT);
         heroRow.getStyleClass().add("dialog-hero");
 
-        VersionControls setupControls = createYtDlpControls("yt-dlpの状態を確認中...", "自動セットアップ");
-        Label versionLabel = setupControls.versionLabel();
-        Label statusLabel = setupControls.statusLabel();
-        ProgressIndicator spinner = setupControls.spinner();
-        Button installButton = setupControls.actionButton();
-        installButton.setOnAction(event -> {
-            AppLogger.log("[HelloApplication] Initial setup: auto setup triggered.");
-            updateYtDlpAsync(dependencyManager, versionLabel, statusLabel, spinner, installButton);
+        // yt-dlp セクション
+        VersionControls ytDlpSetupControls = createVersionControls("yt-dlpの状態を確認中...", "自動セットアップ");
+        Label ytDlpVersionLabel = ytDlpSetupControls.versionLabel();
+        Label ytDlpStatusLabel = ytDlpSetupControls.statusLabel();
+        ProgressIndicator ytDlpSpinner = ytDlpSetupControls.spinner();
+        Button ytDlpInstallButton = ytDlpSetupControls.actionButton();
+        ytDlpInstallButton.setOnAction(event -> {
+            AppLogger.log("[HelloApplication] Initial setup: yt-dlp auto setup triggered.");
+            updateYtDlpAsync(dependencyManager, ytDlpVersionLabel, ytDlpStatusLabel, ytDlpSpinner, ytDlpInstallButton);
         });
+
+        Label ytDlpStatusHeading = new Label("yt-dlpの状態");
+        ytDlpStatusHeading.getStyleClass().add("info-title");
+        HBox ytDlpVersionRow = new HBox(8, ytDlpVersionLabel, ytDlpSpinner, ytDlpInstallButton);
+        ytDlpVersionRow.setAlignment(Pos.CENTER_LEFT);
+
+        GridPane ytDlpStatusGrid = buildStatusGrid(ytDlpVersionRow, ytDlpStatusLabel, 12);
+
+        VBox ytDlpCard = new VBox(10, ytDlpStatusHeading, ytDlpStatusGrid);
+        ytDlpCard.getStyleClass().add("info-card");
+
+        // Deno セクション
+        VersionControls denoSetupControls = createVersionControls("Denoの状態を確認中...", "自動セットアップ");
+        Label denoVersionLabel = denoSetupControls.versionLabel();
+        Label denoStatusLabel = denoSetupControls.statusLabel();
+        ProgressIndicator denoSpinner = denoSetupControls.spinner();
+        Button denoInstallButton = denoSetupControls.actionButton();
+        denoInstallButton.setOnAction(event -> {
+            AppLogger.log("[HelloApplication] Initial setup: Deno auto setup triggered.");
+            updateDenoAsync(dependencyManager, denoVersionLabel, denoStatusLabel, denoSpinner, denoInstallButton);
+        });
+
+        Label denoStatusHeading = new Label("Denoの状態");
+        denoStatusHeading.getStyleClass().add("info-title");
+        HBox denoVersionRow = new HBox(8, denoVersionLabel, denoSpinner, denoInstallButton);
+        denoVersionRow.setAlignment(Pos.CENTER_LEFT);
+
+        GridPane denoStatusGrid = buildStatusGrid(denoVersionRow, denoStatusLabel, 12);
+
+        VBox denoCard = new VBox(10, denoStatusHeading, denoStatusGrid);
+        denoCard.getStyleClass().add("info-card");
 
         Button openSettingsButton = new Button("設定を開く");
         openSettingsButton.getStyleClass().add("ghost-btn");
         openSettingsButton.setOnAction(event -> openSettingsDialog());
-
-        Label statusHeading = new Label("yt-dlpの状態");
-        statusHeading.getStyleClass().add("info-title");
-        HBox versionRow = new HBox(8, versionLabel, spinner, installButton);
-        versionRow.setAlignment(Pos.CENTER_LEFT);
-
-        GridPane statusGrid = buildStatusGrid(versionRow, statusLabel, 12);
-
-        VBox versionCard = new VBox(10, statusHeading, statusGrid);
-        versionCard.getStyleClass().add("info-card");
 
         Region actionsSpacer = new Region();
         HBox.setHgrow(actionsSpacer, Priority.ALWAYS);
         HBox actionsRow = new HBox(10, actionsSpacer, openSettingsButton);
         actionsRow.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox content = new VBox(16, heroRow, versionCard, actionsRow);
+        VBox content = new VBox(16, heroRow, ytDlpCard, denoCard, actionsRow);
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(12, 6, 6, 6));
 
@@ -321,7 +343,8 @@ public class HelloApplication extends Application {
         dialog.setResizable(false);
         dialog.setOnHidden(event -> setupDialog = null);
 
-        refreshYtDlpVersion(dependencyManager, versionLabel, statusLabel, spinner, installButton);
+        refreshYtDlpVersion(dependencyManager, ytDlpVersionLabel, ytDlpStatusLabel, ytDlpSpinner, ytDlpInstallButton);
+        refreshDenoVersion(dependencyManager, denoVersionLabel, denoStatusLabel, denoSpinner, denoInstallButton);
 
         setupDialog = dialog;
         dialog.show();
@@ -363,22 +386,41 @@ public class HelloApplication extends Application {
         Label errorLabel = new Label();
         errorLabel.getStyleClass().add("form-error");
 
-        VersionControls settingsControls = createYtDlpControls("yt-dlpのバージョンを確認中...", "最新を取得");
-        Label ytDlpVersionLabel = settingsControls.versionLabel();
-        ProgressIndicator versionSpinner = settingsControls.spinner();
-        Label versionStatusLabel = settingsControls.statusLabel();
-        Button updateYtDlpBtn = settingsControls.actionButton();
-        updateYtDlpBtn.setOnAction(event -> updateYtDlpAsync(dependencyManager, ytDlpVersionLabel, versionStatusLabel, versionSpinner, updateYtDlpBtn));
+        // yt-dlp セクション
+        VersionControls ytDlpControls = createVersionControls("yt-dlpのバージョンを確認中...", "最新を取得");
+        Label ytDlpVersionLabel = ytDlpControls.versionLabel();
+        ProgressIndicator ytDlpSpinner = ytDlpControls.spinner();
+        Label ytDlpStatusLabel = ytDlpControls.statusLabel();
+        Button updateYtDlpBtn = ytDlpControls.actionButton();
+        updateYtDlpBtn.setOnAction(event -> updateYtDlpAsync(dependencyManager, ytDlpVersionLabel, ytDlpStatusLabel, ytDlpSpinner, updateYtDlpBtn));
 
-        HBox versionRow = new HBox(8, ytDlpVersionLabel, versionSpinner, updateYtDlpBtn);
-        versionRow.setAlignment(Pos.CENTER_LEFT);
+        HBox ytDlpVersionRow = new HBox(8, ytDlpVersionLabel, ytDlpSpinner, updateYtDlpBtn);
+        ytDlpVersionRow.setAlignment(Pos.CENTER_LEFT);
 
-        GridPane statusGrid = buildStatusGrid(versionRow, versionStatusLabel, 10);
+        GridPane ytDlpStatusGrid = buildStatusGrid(ytDlpVersionRow, ytDlpStatusLabel, 10);
 
         Label ytDlpTitle = new Label("yt-dlp");
         ytDlpTitle.getStyleClass().add("info-title");
-        VBox versionBox = new VBox(10, ytDlpTitle, statusGrid);
-        versionBox.getStyleClass().add("info-card");
+        VBox ytDlpBox = new VBox(10, ytDlpTitle, ytDlpStatusGrid);
+        ytDlpBox.getStyleClass().add("info-card");
+
+        // Deno セクション
+        VersionControls denoControls = createVersionControls("Denoのバージョンを確認中...", "最新を取得");
+        Label denoVersionLabel = denoControls.versionLabel();
+        ProgressIndicator denoSpinner = denoControls.spinner();
+        Label denoStatusLabel = denoControls.statusLabel();
+        Button updateDenoBtn = denoControls.actionButton();
+        updateDenoBtn.setOnAction(event -> updateDenoAsync(dependencyManager, denoVersionLabel, denoStatusLabel, denoSpinner, updateDenoBtn));
+
+        HBox denoVersionRow = new HBox(8, denoVersionLabel, denoSpinner, updateDenoBtn);
+        denoVersionRow.setAlignment(Pos.CENTER_LEFT);
+
+        GridPane denoStatusGrid = buildStatusGrid(denoVersionRow, denoStatusLabel, 10);
+
+        Label denoTitle = new Label("Deno");
+        denoTitle.getStyleClass().add("info-title");
+        VBox denoBox = new VBox(10, denoTitle, denoStatusGrid);
+        denoBox.getStyleClass().add("info-card");
 
         GridPane grid = new GridPane();
         grid.setHgap(10);
@@ -399,14 +441,14 @@ public class HelloApplication extends Application {
 
         Label heading = new Label("アプリ設定");
         heading.getStyleClass().add("dialog-heading");
-        Label subtitle = new Label("ウィンドウサイズ、保存先、yt-dlpの状態をまとめて管理します。");
+        Label subtitle = new Label("ウィンドウサイズ、保存先、依存ツールの状態をまとめて管理します。");
         subtitle.setWrapText(true);
         subtitle.getStyleClass().add("dialog-subtitle");
 
         VBox windowSection = new VBox(8, grid);
         windowSection.getStyleClass().add("settings-section");
 
-        VBox content = new VBox(14, heading, subtitle, windowSection, versionBox, errorLabel);
+        VBox content = new VBox(14, heading, subtitle, windowSection, ytDlpBox, denoBox, errorLabel);
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(8, 6, 6, 6));
 
@@ -441,7 +483,8 @@ public class HelloApplication extends Application {
             primaryStage.setHeight(settings.getWindowHeight());
         });
 
-        refreshYtDlpVersion(dependencyManager, ytDlpVersionLabel, versionStatusLabel, versionSpinner, updateYtDlpBtn);
+        refreshYtDlpVersion(dependencyManager, ytDlpVersionLabel, ytDlpStatusLabel, ytDlpSpinner, updateYtDlpBtn);
+        refreshDenoVersion(dependencyManager, denoVersionLabel, denoStatusLabel, denoSpinner, updateDenoBtn);
         dialog.showAndWait();
     }
 
@@ -492,7 +535,7 @@ public class HelloApplication extends Application {
         launch();
     }
 
-    private VersionControls createYtDlpControls(String initialStatusText, String actionText) {
+    private VersionControls createVersionControls(String initialStatusText, String actionText) {
         Label versionLabel = new Label("確認中...");
         versionLabel.getStyleClass().addAll("pill", "pill-accent");
 
@@ -562,6 +605,65 @@ public class HelloApplication extends Application {
         Thread updater = new Thread(() -> {
             DependencyManager.YtDlpUpdateResult updateResult = dependencyManager.updateYtDlp();
             DependencyManager.YtDlpVersionResult versionResult = dependencyManager.getYtDlpVersion();
+
+            Platform.runLater(() -> {
+                spinner.setVisible(false);
+                spinner.setManaged(false);
+                updateButton.setDisable(false);
+                if (versionResult.version() != null) {
+                    versionLabel.setText(versionResult.version());
+                } else {
+                    versionLabel.setText("未インストール");
+                }
+                String message = updateResult.message();
+                if (updateResult.success() && versionResult.version() != null) {
+                    message = updateResult.message() + " (現在: " + versionResult.version() + ")";
+                }
+                statusLabel.setText(message);
+            });
+        });
+        updater.setDaemon(true);
+        updater.start();
+    }
+
+    private void refreshDenoVersion(DependencyManager dependencyManager, Label versionLabel, Label statusLabel, ProgressIndicator spinner, Button updateButton) {
+        versionLabel.setText("確認中...");
+        statusLabel.setText("Denoのバージョンを確認中...");
+        spinner.setVisible(true);
+        spinner.setManaged(true);
+        spinner.setProgress(ProgressIndicator.INDETERMINATE_PROGRESS);
+        updateButton.setDisable(true);
+
+        Thread loader = new Thread(() -> {
+            DependencyManager.DenoVersionResult result = dependencyManager.getDenoVersion();
+            Platform.runLater(() -> {
+                spinner.setVisible(false);
+                spinner.setManaged(false);
+                updateButton.setDisable(false);
+                if (result.success() && result.version() != null) {
+                    versionLabel.setText(result.version());
+                } else if (result.version() != null) {
+                    versionLabel.setText(result.version());
+                } else {
+                    versionLabel.setText("未インストール");
+                }
+                statusLabel.setText(result.message());
+            });
+        });
+        loader.setDaemon(true);
+        loader.start();
+    }
+
+    private void updateDenoAsync(DependencyManager dependencyManager, Label versionLabel, Label statusLabel, ProgressIndicator spinner, Button updateButton) {
+        spinner.setVisible(true);
+        spinner.setManaged(true);
+        spinner.setProgress(ProgressIndicator.INDETERMINATE_PROGRESS);
+        updateButton.setDisable(true);
+        statusLabel.setText("Denoを更新中...");
+
+        Thread updater = new Thread(() -> {
+            DependencyManager.DenoUpdateResult updateResult = dependencyManager.updateDeno();
+            DependencyManager.DenoVersionResult versionResult = dependencyManager.getDenoVersion();
 
             Platform.runLater(() -> {
                 spinner.setVisible(false);

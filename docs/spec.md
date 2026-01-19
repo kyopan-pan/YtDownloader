@@ -2,10 +2,13 @@
 
 ## 1. 基本概要
 * **目的:** YouTubeなどの動画をMP4としてダウンロードし、VJソフト（VDMXなど）へ即ドラッグ＆ドロップできるようにするローカルツール。
-* **動作環境:** macOS (Intel / Apple Silicon)
+* **動作環境:** macOS（**Apple Silicon 専用**）
 * **開発言語:** Java (JDK 21)
 * **フレームワーク:** JavaFX (Maven管理)
-* **依存ツール:** `yt-dlp`, `ffmpeg`。起動時に `~/.ytdownloader/bin` を作成し、yt-dlpはGitHubのmacOS最新ビルドをダウンロード、ffmpegは同梱バイナリをコピーして実行権限を付与。
+* **依存ツール:** `yt-dlp`, `ffmpeg`, `deno`。起動時に `~/.ytdownloader/bin` を作成し、各ツールを以下の方法で準備する。
+  * **yt-dlp:** GitHubのmacOS最新ビルド（`yt-dlp_macos`）をダウンロード
+  * **ffmpeg:** 同梱バイナリをリソースからコピーして実行権限を付与
+  * **Deno:** GitHubのApple Silicon向け最新ビルド（`deno-aarch64-apple-darwin.zip`）をダウンロード・解凍して実行権限を付与
 
 ## 2. 機能要件
 
@@ -18,16 +21,16 @@
     * **進捗100%到達後**、完了イベントまでの間は「変換中...」を表示し、プログレスバーは不確定（indeterminate）状態に切り替える。
     * 成功時はボタンを`success`スタイルにしてリストを更新、失敗時は`error`スタイルにする。いずれも約2秒後に元の状態へ戻し、ボタンを再度操作可能にする。
 * **通常のダウンロード（共通パス）:**
-    * **H.264優先モード**: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
+    * **H.264優先モード**: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> --js-runtimes <内蔵deno> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
     * **互換モード（フォールバック）**: H.264形式が見つからない場合、720p以下の動画を取得しGPU変換を実行。
-      * コマンド: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> -o ... <URL>`
+      * コマンド: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> --js-runtimes <内蔵deno> -o ... <URL>`
       * Apple Silicon GPU（VideoToolbox）を利用した高速変換。
     * **速度最適化:** 動画読み込み（メタデータ取得）短縮のため `--extractor-args "youtube:player_client=web"`（取得クライアントを web に限定）と `youtube:skip=translated_subs`（字幕翻訳取得をスキップ）を付与。DASH/HLS の並列取得のため `--concurrent-fragments 4` を付与。`youtube:` の extractor-args は YouTube 以外では無視される。
     * 環境: `PATH` の先頭に `~/.ytdownloader/bin` を付与して`ProcessBuilder`経由で実行。
 * **AnimeThemes専用パイプライン:**
     * 対象: URLに`animethemes.moe`を含む場合に分岐。
     * ファイル名決定: curlでページのtitleタグから取得し、取得失敗時はURLパスを基にした`*.mp4`（タイムスタンプ付き）へフォールバック。
-    * コマンド: `yt-dlp --no-playlist --concurrent-fragments 4 -f "bv+ba/b" -o - <URL>` の出力を `ffmpeg -loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>` へパイプ。
+    * コマンド: `yt-dlp --no-playlist --concurrent-fragments 4 -f "bv+ba/b" --js-runtimes <内蔵deno> -o - <URL>` の出力を `ffmpeg -loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>` へパイプ。
     * Apple Silicon GPU（VideoToolbox）を利用した高速変換。両プロセスの終了コードが0で成功扱い。
 * **保存先:** `~/Movies/YtDlpDownloads`（起動時に作成）。通常は`%(title)s.%(ext)s`で保存し、AnimeThemesは必ず`.mp4`に変換して保存。
 * **プレイリスト対応:** 常に `--no-playlist` で単体動画のみを対象。
@@ -51,7 +54,12 @@
 * **表示クリア:** 「表示をクリア」でログ一覧を消去。
 
 ## 3. 内部ロジック仕様 (Backend)
-* **依存関係の自動セットアップ:** 起動時にバックグラウンドで `~/.ytdownloader/bin` を準備。yt-dlpをGitHubからダウンロードし、`src/main/resources/bin/ffmpeg` をコピーしてPOSIX実行権を付与。
+* **依存関係の自動セットアップ:** 起動時にバックグラウンドで `~/.ytdownloader/bin` を準備。
+  * yt-dlpをGitHubからダウンロード
+  * `src/main/resources/bin/ffmpeg` をコピーしてPOSIX実行権を付与
+  * DenoをGitHubからダウンロード（`deno-aarch64-apple-darwin.zip`を取得・解凍）
+* **依存関係の更新:** 設定画面または初回セットアップダイアログにて、yt-dlpとDenoそれぞれ個別に「最新を取得」ボタンで最新版へ更新可能。各ツールのバージョンも個別に確認できる。
+* **JS Runtime の指定:** yt-dlp実行時に `--js-runtimes` オプションで同梱Denoの絶対パスを渡す。これによりGUI起動時でもJS runtime未検出問題を回避する。H.264優先モード、互換モード、AnimeThemesパイプラインの全てに適用。
 * **プロセス実行の共通設定:** `PATH` の先頭に内蔵binを追加して`ProcessBuilder`を実行。通常ダウンロードでは標準出力にエラーストリームもまとめ、進捗文字列から`%`を抽出してUIへ反映。
 * **非同期処理:** ダウンロード処理は専用スレッドで実行し、完了通知やUI更新はJavaFX Application Threadで行う。完了時に進捗表示をリセットし、必要に応じてファイルリストを更新。
 

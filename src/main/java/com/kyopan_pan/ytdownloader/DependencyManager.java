@@ -1,12 +1,19 @@
 package com.kyopan_pan.ytdownloader;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class DependencyManager {
 
@@ -47,6 +54,19 @@ public class DependencyManager {
                 AppLogger.log("[DependencyManager] ffmpeg already present: " + ffmpeg.getAbsolutePath());
             }
 
+            // 3. Deno の準備
+            File deno = new File(DownloadConfig.getDenoPath());
+            if (!deno.exists()) {
+                AppLogger.log("[DependencyManager] deno not found. Downloading to " + deno.getAbsolutePath());
+                downloadDeno(deno);
+            } else if (!deno.canExecute()) {
+                AppLogger.log("[DependencyManager] deno found but not executable. Re-applying permission...");
+                makeExecutable(deno.toPath());
+                AppLogger.log("[DependencyManager] deno permission refreshed.");
+            } else {
+                AppLogger.log("[DependencyManager] deno already present: " + deno.getAbsolutePath());
+            }
+
         } catch (Exception e) {
             AppLogger.logError("[DependencyManager] ensureBinaries failed", e);
         }
@@ -85,7 +105,7 @@ public class DependencyManager {
         }
     }
 
-    // yt-dlpのバージョン確認および、初期設定を行うメソッド
+    // yt-dlpの更新を行うメソッド
     public YtDlpUpdateResult updateYtDlp() {
         File binDir = new File(DownloadConfig.BIN_DIR);
         if (!binDir.exists() && !binDir.mkdirs()) {
@@ -109,6 +129,67 @@ public class DependencyManager {
             AppLogger.log("[DependencyManager] Failed to update yt-dlp: " + e.getMessage());
             return new YtDlpUpdateResult(false, "yt-dlpの更新に失敗: " + e.getMessage());
         }
+    }
+
+    // Denoのバージョンを取得するメソッド
+    public DenoVersionResult getDenoVersion() {
+        File deno = new File(DownloadConfig.getDenoPath());
+        if (!deno.exists()) {
+            return new DenoVersionResult(false, null, "Denoが見つかりません。");
+        }
+
+        ProcessBuilder pb = new ProcessBuilder(deno.getAbsolutePath(), "--version");
+        appendBinToPath(pb);
+        pb.redirectErrorStream(true);
+
+        try {
+            AppLogger.log("[DependencyManager] Checking deno version...");
+            Process process = pb.start();
+            String firstLine;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                firstLine = reader.readLine();
+            }
+            int exitCode = process.waitFor();
+            AppLogger.log("[DependencyManager] deno --version exit=" + exitCode + ", firstLine=" + firstLine);
+            if (exitCode != 0) {
+                return new DenoVersionResult(false, null, "バージョン取得に失敗 (exit=" + exitCode + ")");
+            }
+            if (firstLine == null || firstLine.isBlank()) {
+                return new DenoVersionResult(false, null, "バージョン情報が空でした。");
+            }
+            // "deno 1.x.x" から "1.x.x" を抽出
+            String version = firstLine.trim();
+            if (version.toLowerCase().startsWith("deno ")) {
+                version = version.substring(5).trim();
+            }
+            return new DenoVersionResult(true, version, "Denoのバージョンを取得しました。");
+        } catch (Exception e) {
+            AppLogger.log("[DependencyManager] Failed to get deno version: " + e.getMessage());
+            return new DenoVersionResult(false, null, "バージョン取得に失敗: " + e.getMessage());
+        }
+    }
+
+    // Denoの更新を行うメソッド
+    public DenoUpdateResult updateDeno() {
+        File binDir = new File(DownloadConfig.BIN_DIR);
+        if (!binDir.exists() && !binDir.mkdirs()) {
+            return new DenoUpdateResult(false, "binフォルダを作成できませんでした。");
+        }
+        File deno = new File(DownloadConfig.getDenoPath());
+        try {
+            AppLogger.log("[DependencyManager] Updating deno to latest...");
+            downloadDeno(deno);
+            return new DenoUpdateResult(true, "Denoを更新しました。");
+        } catch (IOException e) {
+            AppLogger.log("[DependencyManager] Failed to update deno: " + e.getMessage());
+            return new DenoUpdateResult(false, "Denoの更新に失敗: " + e.getMessage());
+        }
+    }
+
+    public record DenoVersionResult(boolean success, String version, String message) {
+    }
+
+    public record DenoUpdateResult(boolean success, String message) {
     }
 
     public record YtDlpVersionResult(boolean success, String version, String message) {
@@ -145,6 +226,65 @@ public class DependencyManager {
             Thread.currentThread().interrupt();
             throw new IOException("ダウンロードが中断されました", e);
         }
+    }
+
+    private void downloadDeno(File destination) throws IOException {
+        // Apple Silicon (aarch64-apple-darwin) 専用
+        // Deno公式リリースから最新のzipをダウンロードし、解凍してバイナリを配置する
+        String downloadUrl = "https://github.com/denoland/deno/releases/latest/download/deno-aarch64-apple-darwin.zip";
+        File tempZip = new File(destination.getParentFile(), "deno-temp.zip");
+
+        AppLogger.log("[DependencyManager] Downloading deno via curl from " + downloadUrl);
+
+        // curlでzipをダウンロード
+        ProcessBuilder pb = new ProcessBuilder("curl", "-L", "-o", tempZip.getAbsolutePath(), downloadUrl);
+        pb.redirectErrorStream(true);
+
+        try {
+            Process process = pb.start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                while (reader.readLine() != null) {
+                    // バッファあふれを避けるため出力は破棄する
+                }
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                throw new IOException("curlによるDenoダウンロードに失敗しました。Exit code: " + exitCode);
+            }
+
+            // zipを解凍してdenoバイナリを取り出す
+            AppLogger.log("[DependencyManager] Extracting deno from zip...");
+            extractDenoFromZip(tempZip, destination);
+            makeExecutable(destination.toPath());
+            AppLogger.log("[DependencyManager] deno ready: " + destination.getAbsolutePath());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Denoダウンロードが中断されました", e);
+        } finally {
+            // 一時ファイルを削除
+            if (tempZip.exists()) {
+                boolean deleted = tempZip.delete();
+                if (!deleted) {
+                    AppLogger.log("[DependencyManager] Failed to delete temp zip: " + tempZip.getAbsolutePath());
+                }
+            }
+        }
+    }
+
+    private void extractDenoFromZip(File zipFile, File destination) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipFile.toPath()))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                // zipには "deno" というバイナリが直接入っている
+                if (entry.getName().equals("deno") && !entry.isDirectory()) {
+                    Files.copy(zis, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    zis.closeEntry();
+                    return;
+                }
+                zis.closeEntry();
+            }
+        }
+        throw new IOException("Deno zip内に 'deno' バイナリが見つかりませんでした。");
     }
 
     private void copyFfmpegFromResources(File destination) throws IOException {

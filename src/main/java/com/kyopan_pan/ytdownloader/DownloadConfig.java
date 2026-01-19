@@ -20,6 +20,10 @@ public final class DownloadConfig {
         return new File(BIN_DIR, "ffmpeg").getAbsolutePath();
     }
 
+    public static String getDenoPath() {
+        return new File(BIN_DIR, "deno").getAbsolutePath();
+    }
+
     public static synchronized String getDownloadDir() {
         return downloadDir;
     }

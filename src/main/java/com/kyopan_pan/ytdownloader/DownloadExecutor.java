@@ -1,11 +1,10 @@
 package com.kyopan_pan.ytdownloader;
 
-import javafx.application.Platform;
-import javafx.scene.control.Button;
-import javafx.scene.control.ProgressIndicator;
-import javafx.scene.shape.SVGPath;
-
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -16,6 +15,11 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import javafx.application.Platform;
+import javafx.scene.control.Button;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.shape.SVGPath;
 
 public class DownloadExecutor {
 
@@ -109,6 +113,7 @@ public class DownloadExecutor {
         String outputTemplate = DownloadConfig.getDownloadDir() + "/%(title)s.%(ext)s";
         logStep("yt-dlpを通常モード(H.264優先)で起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
 
+        // --js-runtimes: GUI起動時でもJS runtime未検出問題を回避するため、同梱Denoの絶対パスを渡す
         ProcessBuilder pb = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
@@ -119,6 +124,7 @@ public class DownloadExecutor {
                 "--match-filter", "vcodec~='(?i)^(avc|h264)'",
                 "--merge-output-format", "mp4",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
+                "--js-runtimes", DownloadConfig.getDenoPath(),
                 "-o", outputTemplate,
                 url
         ), true);
@@ -137,6 +143,7 @@ public class DownloadExecutor {
         
         logStep("H.264形式が見つからないため、互換モード(720p以下+GPU変換)で再試行します。");
         
+        // --js-runtimes: 互換モードでも同様に同梱Denoを使用
         ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
@@ -147,6 +154,7 @@ public class DownloadExecutor {
                 "--recode-video", "mp4",
                 "--postprocessor-args", "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
+                "--js-runtimes", DownloadConfig.getDenoPath(),
                 "-o", outputTemplate,
                 url
         ), true);
@@ -164,11 +172,13 @@ public class DownloadExecutor {
         logStep("AnimeThemesモード: 即時生成した出力ファイル=" + outputPath);
 
         // 1. yt-dlp: 標準出力(-)にデータを流す設定
+        // --js-runtimes: AnimeThemesパイプラインでも同梱Denoを使用
         ProcessBuilder ytDlp = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
                 "--concurrent-fragments", "4",
                 "-f", "bv+ba/b", // ベスト画質+ベスト音質
+                "--js-runtimes", DownloadConfig.getDenoPath(),
                 "-o", "-",       // 標準出力へ
                 url
         ), false);
