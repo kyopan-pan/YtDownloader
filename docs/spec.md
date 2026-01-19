@@ -29,9 +29,11 @@
     * 環境: `PATH` の先頭に `~/.ytdownloader/bin` を付与して`ProcessBuilder`経由で実行。
 * **AnimeThemes専用パイプライン:**
     * 対象: URLに`animethemes.moe`を含む場合に分岐。
-    * ファイル名決定: curlでページのtitleタグから取得し、取得失敗時はURLパスを基にした`*.mp4`（タイムスタンプ付き）へフォールバック。
-    * コマンド: `yt-dlp --no-playlist --concurrent-fragments 4 -f "bv+ba/b" --js-runtimes <内蔵deno> -o - <URL>` の出力を `ffmpeg -loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>` へパイプ。
-    * Apple Silicon GPU（VideoToolbox）を利用した高速変換。両プロセスの終了コードが0で成功扱い。
+    * ファイル名決定: URLパスを基にした`*.mp4`（タイムスタンプ付き）を使用。curlによるtitle取得は行わない（遅延削減のため）。
+    * **直リンク取得（優先）:** ページ HTML を curl（ブラウザ UA、タイムアウト 8 秒、先頭約 30KB）で取得し、`og:video` または `video src` から `https://.../*.webm` を抽出。取得できた場合、`curl -L -m 120 --fail -o - <直リンク>` の出力を ffmpeg へパイプ。yt-dlp を介さないため、約 17 秒の yt-dlp 起動・generic 抽出の遅延を回避。
+    * **フォールバック:** 直リンクを取得できない場合、`yt-dlp --no-playlist -f "bv+ba/b" -o - <ページURL>` の出力を ffmpeg へパイプ。`--js-runtimes` と yt-dlp 起動時の PATH への bin 追加を行わず、generic エクストラクターの起動をできるだけ速くする。
+    * ffmpeg: `-loglevel error -analyzeduration 100M -probesize 100M -f webm -i pipe:0 -c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p -c:a aac -b:a 192k -ignore_unknown -movflags +faststart -f mp4 -y <出力パス>`
+    * Apple Silicon GPU（VideoToolbox）を利用した高速変換。パイプライン各プロセスの終了コードが 0 で成功扱い。
 * **保存先:** `~/Movies/YtDlpDownloads`（起動時に作成）。通常は`%(title)s.%(ext)s`で保存し、AnimeThemesは必ず`.mp4`に変換して保存。
 * **プレイリスト対応:** 常に `--no-playlist` で単体動画のみを対象。
 
@@ -59,7 +61,7 @@
   * `src/main/resources/bin/ffmpeg` をコピーしてPOSIX実行権を付与
   * DenoをGitHubからダウンロード（`deno-aarch64-apple-darwin.zip`を取得・解凍）
 * **依存関係の更新:** 設定画面または初回セットアップダイアログにて、yt-dlpとDenoそれぞれ個別に「最新を取得」ボタンで最新版へ更新可能。各ツールのバージョンも個別に確認できる。
-* **JS Runtime の指定:** yt-dlp実行時に `--js-runtimes` オプションで同梱Denoの絶対パスを渡す。これによりGUI起動時でもJS runtime未検出問題を回避する。H.264優先モード、互換モード、AnimeThemesパイプラインの全てに適用。
+* **JS Runtime の指定:** 通常ダウンロード（H.264優先・互換モード）の yt-dlp 実行時に `--js-runtimes` オプションで同梱Denoの絶対パスを渡す。これによりGUI起動時でもJS runtime未検出問題を回避する。AnimeThemesパイプラインでは generic エクストラクターが JS を使わないため、`--js-runtimes` と PATH への bin 追加を行わず起動を高速化する。
 * **プロセス実行の共通設定:** `PATH` の先頭に内蔵binを追加して`ProcessBuilder`を実行。通常ダウンロードでは標準出力にエラーストリームもまとめ、進捗文字列から`%`を抽出してUIへ反映。
 * **非同期処理:** ダウンロード処理は専用スレッドで実行し、完了通知やUI更新はJavaFX Application Threadで行う。完了時に進捗表示をリセットし、必要に応じてファイルリストを更新。
 

@@ -1,8 +1,8 @@
 package com.kyopan_pan.ytdownloader;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
@@ -28,6 +28,11 @@ public class DownloadExecutor {
     private static final Pattern POST_PROCESSING_PATTERN = Pattern.compile(
             "(?i)(\\[merger\\]|\\[ffmpeg\\]|\\[extractaudio\\]|\\[postprocess\\]|\\[video(?:convertor|converter)\\]|\\[audio(?:convertor|converter)\\]|\\[fixup\\w*\\]|Merging formats into|Post-process)"
     );
+    /** og:video または video src から .webm 直リンクを抽出 */
+    private static final Pattern ANIME_THEMES_OG_VIDEO = Pattern.compile(
+            "(?:name=\"og:video\" content=\"|video src=\")(https://[^\"]+\\.webm)\""
+    );
+    private static final String CURL_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     private final Consumer<ProgressUpdate> progressConsumer;
     private final Object processLock = new Object();
     private final List<Process> activeProcesses = new ArrayList<>();
@@ -166,24 +171,32 @@ public class DownloadExecutor {
     }
 
     private boolean runAnimeThemesPipeline(String url) throws Exception {
-        logStep("AnimeThemesモード: yt-dlpへのファイル名問い合わせをスキップします。");
-        String mp4Name = animeThemesFilenameFromTitle(url);
+        // ファイル名はURLパスから即時生成（curlによるtitle取得は行わず遅延を削減）
+        String mp4Name = quickAnimeThemesFilename(url);
         Path outputPath = Paths.get(DownloadConfig.getDownloadDir(), mp4Name);
         logStep("AnimeThemesモード: 即時生成した出力ファイル=" + outputPath);
 
+        // ページの og:video / video src から .webm 直リンクを取得できれば、yt-dlp を介さず curl|ffmpeg で高速化
+        String directUrl = fetchAnimeThemesDirectVideoUrl(url);
+        if (directUrl != null) {
+            logStep("AnimeThemes: 直リンクを取得。curl→ffmpeg でダウンロードします。");
+            return runAnimeThemesDirectPipeline(directUrl, outputPath);
+        }
+        logStep("AnimeThemes: 直リンク取得に失敗。yt-dlp パイプラインにフォールバックします。");
+
         // 1. yt-dlp: 標準出力(-)にデータを流す設定
-        // --js-runtimes: AnimeThemesパイプラインでも同梱Denoを使用
+        // generic エクストラクターはJS不要。--js-runtimes と PATH の bin 追加を省き起動を高速化
         ProcessBuilder ytDlp = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
                 "--concurrent-fragments", "4",
                 "-f", "bv+ba/b", // ベスト画質+ベスト音質
-                "--js-runtimes", DownloadConfig.getDenoPath(),
+                "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
                 "-o", "-",       // 標準出力へ
                 url
-        ), false);
+        ), false, false);
 
-        // 2. ffmpeg: パイプからの入力を強化設定で受け取る
+        // 2. ffmpeg: パイプからの入力を強化設定で受け取る（絶対パス実行のため PATH はデフォルトでよい）
         ProcessBuilder ffmpeg = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getFfmpegPath(),
                 "-loglevel", "error",
@@ -228,64 +241,87 @@ public class DownloadExecutor {
         return succeeded(ytExit) && succeeded(ffExit);
     }
 
-    private String animeThemesFilenameFromTitle(String url) {
-        String fallback = quickAnimeThemesFilename(url);
-        String title = fetchTitleWithCurl(url);
-        if (title == null || title.isBlank()) {
-            logStep("title取得に失敗または空。URL由来の一時名を使用します: " + fallback);
-            return fallback;
-        }
-        String normalized = title.replaceAll("\\s*\\|.*", "").trim();
-        if (normalized.isBlank()) {
-            normalized = title.trim();
-        }
-        String sanitized = normalized
-                .replaceAll("[\\\\/:*?\"<>|]", "_")
-                .replaceAll("\\s+", "_");
-        if (sanitized.isBlank()) {
-            sanitized = "animethemes";
-        }
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        return sanitized + "-" + timestamp + ".mp4";
-    }
-
-    private String fetchTitleWithCurl(String url) {
-        logStep("curlでtitleタグ取得を試行中...");
-        CommandResult result = collectOutput(
-                new ProcessBuilder("curl", "-Ls", "-m", "5", url)
+    /**
+     * ページ HTML の og:video または video src から .webm の直リンクを抽出する。
+     * 取得できなければ null。curl はブラウザ UA で先頭約 30KB のみ取得（タイムアウト 8 秒）。
+     */
+    private String fetchAnimeThemesDirectVideoUrl(String pageUrl) {
+        logStep("AnimeThemes: 直リンク取得を試行（HTML から .webm URL を抽出）");
+        ProcessBuilder pb = new ProcessBuilder(
+                "curl", "-sL", "-m", "8", "-A", CURL_USER_AGENT, pageUrl
         );
-        if (!result.success()) {
-            logStep("curlが非0終了(exit=" + result.exitCode() + ")。");
-            return null;
-        }
-        String title = parseTitleFromHtml(result.output());
-        if (title != null) {
-            logStep("curlでtitleを取得: " + title);
-        } else {
-            logStep("curlでtitleタグを検出できず。");
-        }
-        return title;
-    }
-
-    private String parseTitleFromHtml(String html) {
-        if (html == null || html.isBlank()) {
-            return null;
-        }
-        Matcher matcher = Pattern.compile("(?is)<title[^>]*>(.*?)</title>").matcher(html);
-        if (matcher.find()) {
-            String title = matcher.group(1).trim();
-            if (title.isEmpty()) {
-                return null;
+        pb.redirectErrorStream(true);
+        Process process = null;
+        try {
+            process = pb.start();
+            registerProcess(process);
+            ByteArrayOutputStream buf = new ByteArrayOutputStream(30_000);
+            byte[] b = new byte[4096];
+            int r;
+            InputStream in = process.getInputStream();
+            while (buf.size() < 30_000 && (r = in.read(b)) != -1) {
+                buf.write(b, 0, r);
             }
-            // 最低限のデコード（よくあるエンティティのみ）
-            return title
-                    .replace("&amp;", "&")
-                    .replace("&lt;", "<")
-                    .replace("&gt;", ">")
-                    .replace("&quot;", "\"")
-                    .replace("&apos;", "'");
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+            process.waitFor();
+            String html = buf.toString(StandardCharsets.UTF_8);
+            Matcher m = ANIME_THEMES_OG_VIDEO.matcher(html);
+            if (m.find()) {
+                String url = m.group(1);
+                logStep("AnimeThemes: 直リンクを取得: " + url);
+                return url;
+            }
+        } catch (Exception e) {
+            AppLogger.log("[DownloadExecutor] AnimeThemes 直リンク取得で例外: " + e.getMessage());
+        } finally {
+            if (process != null) {
+                unregisterProcess(process);
+            }
         }
         return null;
+    }
+
+    /** 直リンクを curl で取得し ffmpeg にパイプ。yt-dlp の起動遅延を避けて高速化。 */
+    private boolean runAnimeThemesDirectPipeline(String directVideoUrl, Path outputPath) throws Exception {
+        ProcessBuilder curl = new ProcessBuilder(
+                "curl", "-L", "-m", "120", "--fail", "-o", "-", "-A", CURL_USER_AGENT, directVideoUrl
+        );
+        curl.redirectError(ProcessBuilder.Redirect.DISCARD);
+
+        ProcessBuilder ffmpeg = prepareProcess(new ProcessBuilder(
+                DownloadConfig.getFfmpegPath(),
+                "-loglevel", "error",
+                "-analyzeduration", "100M",
+                "-probesize", "100M",
+                "-f", "webm",
+                "-i", "pipe:0",
+                "-c:v", "h264_videotoolbox",
+                "-b:v", "5M",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-ignore_unknown",
+                "-movflags", "+faststart",
+                "-f", "mp4",
+                "-y",
+                outputPath.toString()
+        ), false);
+
+        logStep("AnimeThemesモード: curl→ffmpeg パイプラインを起動します。");
+        List<Process> pipeline = ProcessBuilder.startPipeline(List.of(curl, ffmpeg));
+        Process curlProcess = pipeline.get(0);
+        Process ffmpegProcess = pipeline.get(1);
+
+        registerProcess(curlProcess);
+        long curlStart = logProcessStart("curl（AnimeThemes直リンク）");
+        TrackedProcess curlTracked = new TrackedProcess(curlProcess, "curl（AnimeThemes直リンク）", curlStart, null);
+        TrackedProcess ffMonitor = monitorProcess("ffmpeg（AnimeThemes）", ffmpegProcess, false, true, "ffmpeg");
+
+        int curlExit = awaitProcess(curlTracked);
+        int ffExit = awaitProcess(ffMonitor);
+        return succeeded(curlExit) && succeeded(ffExit);
     }
 
     private String quickAnimeThemesFilename(String url) {
@@ -625,7 +661,13 @@ public class DownloadExecutor {
     }
 
     private ProcessBuilder prepareProcess(ProcessBuilder builder, boolean redirectErrorStream) {
-        addBinDirToPath(builder);
+        return prepareProcess(builder, redirectErrorStream, true);
+    }
+
+    private ProcessBuilder prepareProcess(ProcessBuilder builder, boolean redirectErrorStream, boolean addBinToPath) {
+        if (addBinToPath) {
+            addBinDirToPath(builder);
+        }
         builder.redirectErrorStream(redirectErrorStream);
         return builder;
     }
@@ -664,59 +706,10 @@ public class DownloadExecutor {
         }
     }
 
-    private CommandResult collectOutput(ProcessBuilder builder) {
-        prepareProcess(builder, true);
-        long start = logProcessStart("curl（title取得）");
-        Process process = null;
-        try {
-            process = builder.start();
-            registerProcess(process);
-            String output = readLimited(process.getInputStream());
-            int exitCode = waitForProcess(process);
-            logProcessEnd("curl（title取得）", start, exitCode);
-            return new CommandResult(exitCode, output);
-        } catch (Exception e) {
-            logStep("curl（title取得）" + " の実行に失敗: " + e.getMessage());
-            logProcessEnd("curl（title取得）", start, -1);
-            return new CommandResult(-1, "");
-        } finally {
-            if (process != null) {
-                unregisterProcess(process);
-            }
-        }
-    }
-
-    private String readLimited(InputStream stream) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            StringBuilder out = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null && out.length() < 12000) {
-                if (out.length() + line.length() + 1 > 12000) {
-                    int remaining = 12000 - out.length();
-                    if (remaining > 0) {
-                        out.append(line, 0, remaining);
-                    }
-                    break;
-                }
-                out.append(line);
-                if (out.length() < 12000) {
-                    out.append('\n');
-                }
-            }
-            return out.toString();
-        }
-    }
-
     private void markProgressStarted() {
         progressStarted = true;
     }
 
     private record TrackedProcess(Process process, String label, long startNanos, Thread logThread) {
-    }
-
-    private record CommandResult(int exitCode, String output) {
-        boolean success() {
-            return exitCode == 0;
-        }
     }
 }
