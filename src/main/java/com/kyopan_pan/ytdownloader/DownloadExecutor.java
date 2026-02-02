@@ -16,10 +16,12 @@ import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.shape.SVGPath;
+import javafx.util.Duration;
 
 public class DownloadExecutor {
 
@@ -118,7 +120,7 @@ public class DownloadExecutor {
         String outputTemplate = DownloadConfig.getDownloadDir() + "/%(title)s.%(ext)s";
         logStep("yt-dlpを通常モード(H.264優先)で起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
 
-        // --js-runtimes: GUI起動時でもJS runtime未検出問題を回避するため、同梱Denoの絶対パスを渡す
+        // --js-runtimes: GUI起動時でもJS runtime未検出問題を回避するため、同梱Denoを名前指定で使用
         ProcessBuilder pb = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
@@ -129,7 +131,7 @@ public class DownloadExecutor {
                 "--match-filter", "vcodec~='(?i)^(avc|h264)'",
                 "--merge-output-format", "mp4",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
-                "--js-runtimes", DownloadConfig.getDenoPath(),
+                "--js-runtimes", "deno",
                 "-o", outputTemplate,
                 url
         ), true);
@@ -148,7 +150,7 @@ public class DownloadExecutor {
         
         logStep("H.264形式が見つからないため、互換モード(720p以下+GPU変換)で再試行します。");
         
-        // --js-runtimes: 互換モードでも同様に同梱Denoを使用
+        // --js-runtimes: 互換モードでも同様に同梱Denoを名前指定で使用
         ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(
                 DownloadConfig.getYtDlpPath(),
                 "--no-playlist",
@@ -159,7 +161,7 @@ public class DownloadExecutor {
                 "--recode-video", "mp4",
                 "--postprocessor-args", "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p",
                 "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
-                "--js-runtimes", DownloadConfig.getDenoPath(),
+                "--js-runtimes", "deno",
                 "-o", outputTemplate,
                 url
         ), true);
@@ -380,6 +382,7 @@ public class DownloadExecutor {
     }
 
     private void handleFinish(boolean success, Button btn, SVGPath downloadIcon, SVGPath successIcon, Runnable onSuccess) {
+        String elapsed = formatElapsedForUi();
         btn.setDisable(false);
         btn.getStyleClass().removeAll("busy", "stop");
         if (success) {
@@ -401,7 +404,12 @@ public class DownloadExecutor {
             btn.setAccessibleText("Download");
         }
         clearDownloadStart();
-        sendProgress(ProgressUpdate.hidden());
+        if (success) {
+            sendProgress(ProgressUpdate.completed(elapsed));
+            scheduleProgressHideIfIdle();
+        } else {
+            sendProgress(ProgressUpdate.hidden());
+        }
     }
 
     private void handleCancelled(Button btn, SVGPath downloadIcon) {
@@ -566,6 +574,10 @@ public class DownloadExecutor {
             return new ProgressUpdate("変換中..." + formatElapsed(elapsed), ProgressIndicator.INDETERMINATE_PROGRESS, true);
         }
 
+        public static ProgressUpdate completed(String elapsed) {
+            return new ProgressUpdate("ダウンロード完了!" + formatElapsed(elapsed), 1.0, true);
+        }
+
         public static ProgressUpdate hidden() {
             return new ProgressUpdate("", 0, false);
         }
@@ -614,6 +626,16 @@ public class DownloadExecutor {
         if (ticker != null) {
             ticker.interrupt();
         }
+    }
+
+    private void scheduleProgressHideIfIdle() {
+        PauseTransition delay = new PauseTransition(Duration.millis(1200));
+        delay.setOnFinished(event -> {
+            if (!downloadActive) {
+                sendProgress(ProgressUpdate.hidden());
+            }
+        });
+        delay.play();
     }
 
     private String formatDuration(long nanos) {

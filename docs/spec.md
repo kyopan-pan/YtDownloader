@@ -19,11 +19,12 @@
     * バックグラウンドスレッドでダウンロードし、終了後にUIスレッドへ処理を戻す。
     * ログに含まれる`XX%`を検出した場合はプログレスバーを更新。検出できない間は不確定状態。
     * **進捗100%到達後**、完了イベントまでの間は「変換中...」を表示し、プログレスバーは不確定（indeterminate）状態に切り替える。
+    * 後処理完了後に「ダウンロード完了!」を短時間表示し、その後「待機中...」へ戻す。
     * 成功時はボタンを`success`スタイルにしてリストを更新、失敗時は`error`スタイルにする。いずれも約2秒後に元の状態へ戻し、ボタンを再度操作可能にする。
 * **通常のダウンロード（共通パス）:**
-    * **H.264優先モード**: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> --js-runtimes <内蔵deno> -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
+    * **H.264優先モード**: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> --js-runtimes deno -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
     * **互換モード（フォールバック）**: H.264形式が見つからない場合、720p以下の動画を取得しGPU変換を実行。
-      * コマンド: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> --js-runtimes <内蔵deno> -o ... <URL>`
+      * コマンド: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> --js-runtimes deno -o ... <URL>`
       * Apple Silicon GPU（VideoToolbox）を利用した高速変換。
     * **速度最適化:** 動画読み込み（メタデータ取得）短縮のため `--extractor-args "youtube:player_client=web"`（取得クライアントを web に限定）と `youtube:skip=translated_subs`（字幕翻訳取得をスキップ）を付与。DASH/HLS の並列取得のため `--concurrent-fragments 4` を付与。`youtube:` の extractor-args は YouTube 以外では無視される。
     * 環境: `PATH` の先頭に `~/.ytdownloader/bin` を付与して`ProcessBuilder`経由で実行。
@@ -61,7 +62,7 @@
   * `src/main/resources/bin/ffmpeg` をコピーしてPOSIX実行権を付与
   * DenoをGitHubからダウンロード（`deno-aarch64-apple-darwin.zip`を取得・解凍）
 * **依存関係の更新:** 設定画面または初回セットアップダイアログにて、yt-dlpとDenoそれぞれ個別に「最新を取得」ボタンで最新版へ更新可能。各ツールのバージョンも個別に確認できる。
-* **JS Runtime の指定:** 通常ダウンロード（H.264優先・互換モード）の yt-dlp 実行時に `--js-runtimes` オプションで同梱Denoの絶対パスを渡す。これによりGUI起動時でもJS runtime未検出問題を回避する。AnimeThemesパイプラインでは generic エクストラクターが JS を使わないため、`--js-runtimes` と PATH への bin 追加を行わず起動を高速化する。
+* **JS Runtime の指定:** 通常ダウンロード（H.264優先・互換モード）の yt-dlp 実行時に `--js-runtimes deno` を指定し、PATH 先頭に追加した内蔵binからDenoを解決する。これによりGUI起動時でもJS runtime未検出問題を回避する。AnimeThemesパイプラインでは generic エクストラクターが JS を使わないため、`--js-runtimes` と PATH への bin 追加を行わず起動を高速化する。
 * **プロセス実行の共通設定:** `PATH` の先頭に内蔵binを追加して`ProcessBuilder`を実行。通常ダウンロードでは標準出力にエラーストリームもまとめ、進捗文字列から`%`を抽出してUIへ反映。
 * **非同期処理:** ダウンロード処理は専用スレッドで実行し、完了通知やUI更新はJavaFX Application Threadで行う。完了時に進捗表示をリセットし、必要に応じてファイルリストを更新。
 
