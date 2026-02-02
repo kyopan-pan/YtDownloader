@@ -19,11 +19,18 @@ public final class UserSettings {
     private double windowWidth;
     private double windowHeight;
     private String downloadDirectory;
+    private boolean useBrowserCookies;
+    private String cookiesBrowser;
+    private String cookiesProfile;
 
-    private UserSettings(double windowWidth, double windowHeight, String downloadDirectory) {
+    private UserSettings(double windowWidth, double windowHeight, String downloadDirectory,
+                         boolean useBrowserCookies, String cookiesBrowser, String cookiesProfile) {
         this.windowWidth = windowWidth;
         this.windowHeight = windowHeight;
         this.downloadDirectory = downloadDirectory;
+        this.useBrowserCookies = useBrowserCookies;
+        this.cookiesBrowser = cookiesBrowser;
+        this.cookiesProfile = cookiesProfile;
     }
 
     public static UserSettings load() {
@@ -39,8 +46,14 @@ public final class UserSettings {
         double width = parseDimension(props.getProperty("window.width"), DEFAULT_WIDTH, MIN_WIDTH);
         double height = parseDimension(props.getProperty("window.height"), DEFAULT_HEIGHT, MIN_HEIGHT);
         String dir = normalizeDir(props.getProperty("download.dir", DownloadConfig.getDefaultDownloadDir()));
+        boolean useCookies = parseBoolean(props.getProperty("cookies.from_browser.enabled"), false);
+        String cookieBrowser = normalizeValue(props.getProperty("cookies.from_browser.browser"));
+        String cookieProfile = normalizeValue(props.getProperty("cookies.from_browser.profile"));
         DownloadConfig.setDownloadDir(dir);
-        return new UserSettings(width, height, dir);
+        DownloadConfig.setUseBrowserCookies(useCookies);
+        DownloadConfig.setCookiesBrowser(cookieBrowser);
+        DownloadConfig.setCookiesProfile(cookieProfile);
+        return new UserSettings(width, height, dir, useCookies, cookieBrowser, cookieProfile);
     }
 
     public void save() {
@@ -48,6 +61,9 @@ public final class UserSettings {
         props.setProperty("window.width", String.valueOf(windowWidth));
         props.setProperty("window.height", String.valueOf(windowHeight));
         props.setProperty("download.dir", downloadDirectory);
+        props.setProperty("cookies.from_browser.enabled", String.valueOf(useBrowserCookies));
+        props.setProperty("cookies.from_browser.browser", nullToEmpty(cookiesBrowser));
+        props.setProperty("cookies.from_browser.profile", nullToEmpty(cookiesProfile));
 
         Path file = settingsFile();
         try {
@@ -85,6 +101,33 @@ public final class UserSettings {
         DownloadConfig.setDownloadDir(this.downloadDirectory);
     }
 
+    public boolean isUseBrowserCookies() {
+        return useBrowserCookies;
+    }
+
+    public void setUseBrowserCookies(boolean useBrowserCookies) {
+        this.useBrowserCookies = useBrowserCookies;
+        DownloadConfig.setUseBrowserCookies(useBrowserCookies);
+    }
+
+    public String getCookiesBrowser() {
+        return cookiesBrowser;
+    }
+
+    public void setCookiesBrowser(String cookiesBrowser) {
+        this.cookiesBrowser = normalizeValue(cookiesBrowser);
+        DownloadConfig.setCookiesBrowser(this.cookiesBrowser);
+    }
+
+    public String getCookiesProfile() {
+        return cookiesProfile;
+    }
+
+    public void setCookiesProfile(String cookiesProfile) {
+        this.cookiesProfile = normalizeValue(cookiesProfile);
+        DownloadConfig.setCookiesProfile(this.cookiesProfile);
+    }
+
     private static Path settingsFile() {
         return Paths.get(DownloadConfig.APP_DATA_DIR, SETTINGS_FILE_NAME);
     }
@@ -106,5 +149,23 @@ public final class UserSettings {
             return DownloadConfig.getDefaultDownloadDir();
         }
         return Paths.get(dir.trim()).toAbsolutePath().toString();
+    }
+
+    private static boolean parseBoolean(String raw, boolean fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        return Boolean.parseBoolean(raw.trim());
+    }
+
+    private static String normalizeValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 }

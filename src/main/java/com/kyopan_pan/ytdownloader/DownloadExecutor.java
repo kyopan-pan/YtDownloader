@@ -121,20 +121,31 @@ public class DownloadExecutor {
         logStep("yt-dlpを通常モード(H.264優先)で起動準備: URL=" + url + ", 出力テンプレート=" + outputTemplate);
 
         // --js-runtimes: GUI起動時でもJS runtime未検出問題を回避するため、同梱Denoを名前指定で使用
-        ProcessBuilder pb = prepareProcess(new ProcessBuilder(
-                DownloadConfig.getYtDlpPath(),
-                "--no-playlist",
-                "--extractor-args", "youtube:player_client=web",
-                "--extractor-args", "youtube:skip=translated_subs",
-                "--concurrent-fragments", "4",
-                "-S", "vcodec:h264,res,acodec:m4a",
-                "--match-filter", "vcodec~='(?i)^(avc|h264)'",
-                "--merge-output-format", "mp4",
-                "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
-                "--js-runtimes", "deno",
-                "-o", outputTemplate,
-                url
-        ), true);
+        List<String> baseArgs = new ArrayList<>();
+        baseArgs.add(DownloadConfig.getYtDlpPath());
+        baseArgs.add("--no-playlist");
+        baseArgs.addAll(buildCookiesFromBrowserArgs());
+        baseArgs.add("--extractor-args");
+        baseArgs.add("youtube:player_client=web");
+        baseArgs.add("--extractor-args");
+        baseArgs.add("youtube:skip=translated_subs");
+        baseArgs.add("--concurrent-fragments");
+        baseArgs.add("4");
+        baseArgs.add("-S");
+        baseArgs.add("vcodec:h264,res,acodec:m4a");
+        baseArgs.add("--match-filter");
+        baseArgs.add("vcodec~='(?i)^(avc|h264)'");
+        baseArgs.add("--merge-output-format");
+        baseArgs.add("mp4");
+        baseArgs.add("--ffmpeg-location");
+        baseArgs.add(DownloadConfig.getFfmpegPath());
+        baseArgs.add("--js-runtimes");
+        baseArgs.add("deno");
+        baseArgs.add("-o");
+        baseArgs.add(outputTemplate);
+        baseArgs.add(url);
+
+        ProcessBuilder pb = prepareProcess(new ProcessBuilder(baseArgs), true);
 
         Process process = pb.start();
         TrackedProcess tracked = monitorProcess("yt-dlp（H.264優先）", process, true, false, "yt-dlp");
@@ -149,22 +160,33 @@ public class DownloadExecutor {
         }
         
         logStep("H.264形式が見つからないため、互換モード(720p以下+GPU変換)で再試行します。");
-        
+
         // --js-runtimes: 互換モードでも同様に同梱Denoを名前指定で使用
-        ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(
-                DownloadConfig.getYtDlpPath(),
-                "--no-playlist",
-                "--extractor-args", "youtube:player_client=web",
-                "--extractor-args", "youtube:skip=translated_subs",
-                "--concurrent-fragments", "4",
-                "-f", "bv*[height<=720]+ba/b[height<=720]",
-                "--recode-video", "mp4",
-                "--postprocessor-args", "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p",
-                "--ffmpeg-location", DownloadConfig.getFfmpegPath(),
-                "--js-runtimes", "deno",
-                "-o", outputTemplate,
-                url
-        ), true);
+        List<String> fallbackArgs = new ArrayList<>();
+        fallbackArgs.add(DownloadConfig.getYtDlpPath());
+        fallbackArgs.add("--no-playlist");
+        fallbackArgs.addAll(buildCookiesFromBrowserArgs());
+        fallbackArgs.add("--extractor-args");
+        fallbackArgs.add("youtube:player_client=web");
+        fallbackArgs.add("--extractor-args");
+        fallbackArgs.add("youtube:skip=translated_subs");
+        fallbackArgs.add("--concurrent-fragments");
+        fallbackArgs.add("4");
+        fallbackArgs.add("-f");
+        fallbackArgs.add("bv*[height<=720]+ba/b[height<=720]");
+        fallbackArgs.add("--recode-video");
+        fallbackArgs.add("mp4");
+        fallbackArgs.add("--postprocessor-args");
+        fallbackArgs.add("VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p");
+        fallbackArgs.add("--ffmpeg-location");
+        fallbackArgs.add(DownloadConfig.getFfmpegPath());
+        fallbackArgs.add("--js-runtimes");
+        fallbackArgs.add("deno");
+        fallbackArgs.add("-o");
+        fallbackArgs.add(outputTemplate);
+        fallbackArgs.add(url);
+
+        ProcessBuilder pbFallback = prepareProcess(new ProcessBuilder(fallbackArgs), true);
         
         Process processFallback = pbFallback.start();
         TrackedProcess trackedFallback = monitorProcess("yt-dlp（互換モード）", processFallback, true, false, "yt-dlp");
@@ -375,6 +397,23 @@ public class DownloadExecutor {
         String currentPath = System.getenv("PATH");
         logStep("PATHにbinディレクトリを追加: " + DownloadConfig.BIN_DIR);
         pb.environment().put("PATH", DownloadConfig.BIN_DIR + File.pathSeparator + (currentPath != null ? currentPath : ""));
+    }
+
+    private List<String> buildCookiesFromBrowserArgs() {
+        if (!DownloadConfig.isUseBrowserCookies()) {
+            return List.of();
+        }
+        String browser = DownloadConfig.getCookiesBrowser();
+        if (browser == null || browser.isBlank()) {
+            logStep("cookies-from-browser が有効ですがブラウザ名が未設定のため無効化します。");
+            return List.of();
+        }
+        String profile = DownloadConfig.getCookiesProfile();
+        String value = browser.trim();
+        if (profile != null && !profile.isBlank()) {
+            value = value + ":" + profile.trim();
+        }
+        return List.of("--cookies-from-browser", value);
     }
 
     private boolean isAnimeThemesUrl(String url) {

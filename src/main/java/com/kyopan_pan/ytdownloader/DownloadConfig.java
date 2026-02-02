@@ -10,6 +10,9 @@ public final class DownloadConfig {
 
     private static final String DEFAULT_DOWNLOAD_DIR = System.getProperty("user.home") + "/Movies/YtDlpDownloads";
     private static String downloadDir = DEFAULT_DOWNLOAD_DIR;
+    private static boolean useBrowserCookies = false;
+    private static String cookiesBrowser = "";
+    private static String cookiesProfile = "";
 
     // バイナリのパスを動的に生成
     public static String getYtDlpPath() {
@@ -36,8 +39,39 @@ public final class DownloadConfig {
         downloadDir = new File(newDir).getAbsolutePath();
     }
 
+    public static synchronized boolean isUseBrowserCookies() {
+        return useBrowserCookies;
+    }
+
+    public static synchronized void setUseBrowserCookies(boolean useBrowserCookies) {
+        DownloadConfig.useBrowserCookies = useBrowserCookies;
+    }
+
+    public static synchronized String getCookiesBrowser() {
+        return cookiesBrowser;
+    }
+
+    public static synchronized void setCookiesBrowser(String browser) {
+        cookiesBrowser = normalizeCookieValue(browser);
+    }
+
+    public static synchronized String getCookiesProfile() {
+        return cookiesProfile;
+    }
+
+    public static synchronized void setCookiesProfile(String profile) {
+        cookiesProfile = normalizeCookieValue(profile);
+    }
+
     public static String getDefaultDownloadDir() {
         return DEFAULT_DOWNLOAD_DIR;
+    }
+
+    private static String normalizeCookieValue(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
     }
 
     private DownloadConfig() {

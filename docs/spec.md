@@ -22,6 +22,7 @@
     * 後処理完了後に「ダウンロード完了!」を短時間表示し、その後「待機中...」へ戻す。
     * 成功時はボタンを`success`スタイルにしてリストを更新、失敗時は`error`スタイルにする。いずれも約2秒後に元の状態へ戻し、ボタンを再度操作可能にする。
 * **通常のダウンロード（共通パス）:**
+    * **YouTube認証補助（任意）:** bot確認が出る場合に備えて、設定で有効化すると `--cookies-from-browser <browser[:profile]>` を付与して実行。ブラウザ名とプロファイル（例: `Default` / `Profile 1`）は設定画面で指定する。
     * **H.264優先モード**: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -S "vcodec:h264,res,acodec:m4a" --match-filter "vcodec~='(?i)^(avc|h264)'" --merge-output-format mp4 --ffmpeg-location <内蔵ffmpeg> --js-runtimes deno -o ~/Movies/YtDlpDownloads/%(title)s.%(ext)s <URL>`
     * **互換モード（フォールバック）**: H.264形式が見つからない場合、720p以下の動画を取得しGPU変換を実行。
       * コマンド: `yt-dlp --no-playlist --extractor-args "youtube:player_client=web" --extractor-args "youtube:skip=translated_subs" --concurrent-fragments 4 -f "bv*[height<=720]+ba/b[height<=720]" --recode-video mp4 --postprocessor-args "VideoConvertor:-c:v h264_videotoolbox -b:v 5M -pix_fmt yuv420p" --ffmpeg-location <内蔵ffmpeg> --js-runtimes deno -o ... <URL>`
@@ -74,6 +75,7 @@
     3. "Downloads" ラベル
     4. ダウンロード済みファイルリスト（削除ボタン付き、ドラッグ＆ドロップ可能）
 * **テーマ:** ダーク基調のグラデーション背景にシアン系アクセントカラーを使用。
+* **設定画面（追加項目）:** bot確認対策として `--cookies-from-browser` を有効化でき、ブラウザ名とプロファイルを指定可能。プロファイルの所在は Chrome の `chrome://version` にある「プロフィール パス」で確認できる。Firefoxは `about:profiles` の「Root Directory」に表示される。Safariは `chrome://version` のような画面がないため、Safari設定の「プロファイル」で名前を確認し、必要に応じて Finder の「フォルダへ移動」で `~/Library/Safari/Profiles/` を確認する。
 
 ## 5. 開発環境
 * **起動（VS Code）:** `.vscode/launch.json` の「Launch YtDownloader」で起動。起動前に `mvn-compile` タスクでビルドする。Java 拡張が `ClassNotFoundException` を出す場合は、タスク「Run YtDownloader (Maven javafx:run)」で `mvn javafx:run` を実行する。

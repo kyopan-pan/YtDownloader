@@ -15,6 +15,7 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
@@ -378,10 +379,26 @@ public class HelloApplication extends Application {
         TextField widthField = new TextField(String.valueOf((int) Math.round(settings.getWindowWidth())));
         TextField heightField = new TextField(String.valueOf((int) Math.round(settings.getWindowHeight())));
         TextField outputField = new TextField(settings.getDownloadDirectory());
+        CheckBox useBrowserCookiesCheck = new CheckBox("ブラウザのクッキーを使う（bot確認対策）");
+        TextField cookieBrowserField = new TextField(settings.getCookiesBrowser());
+        TextField cookieProfileField = new TextField(settings.getCookiesProfile());
         widthField.getStyleClass().add("settings-field");
         heightField.getStyleClass().add("settings-field");
         outputField.getStyleClass().add("settings-field");
+        cookieBrowserField.getStyleClass().add("settings-field");
+        cookieProfileField.getStyleClass().add("settings-field");
         outputField.setPrefColumnCount(22);
+        useBrowserCookiesCheck.setSelected(settings.isUseBrowserCookies());
+        cookieBrowserField.setPromptText("例: chrome / firefox / safari");
+        cookieProfileField.setPromptText("例: Default / Profile 1");
+
+        Runnable syncCookieFields = () -> {
+            boolean enabled = useBrowserCookiesCheck.isSelected();
+            cookieBrowserField.setDisable(!enabled);
+            cookieProfileField.setDisable(!enabled);
+        };
+        syncCookieFields.run();
+        useBrowserCookiesCheck.selectedProperty().addListener((obs, oldValue, newValue) -> syncCookieFields.run());
 
         Button browseBtn = new Button("フォルダを選択");
         browseBtn.getStyleClass().add("ghost-btn");
@@ -462,7 +479,27 @@ public class HelloApplication extends Application {
         VBox windowSection = new VBox(8, grid);
         windowSection.getStyleClass().add("settings-section");
 
-        VBox content = new VBox(14, heading, subtitle, windowSection, ytDlpBox, denoBox, errorLabel);
+        Label cookiesHeading = new Label("YouTube認証");
+        cookiesHeading.getStyleClass().add("info-title");
+        Label cookiesSubtitle = new Label("bot確認が出る場合のみ有効化してください。ブラウザ名とプロファイルはyt-dlpの--cookies-from-browserに渡されます。");
+        cookiesSubtitle.setWrapText(true);
+        cookiesSubtitle.getStyleClass().add("muted-label");
+
+        GridPane cookieGrid = new GridPane();
+        cookieGrid.setHgap(10);
+        cookieGrid.setVgap(12);
+        Label cookieBrowserLabel = new Label("ブラウザ名");
+        Label cookieProfileLabel = new Label("プロファイル");
+        cookieBrowserLabel.getStyleClass().add("muted-label");
+        cookieProfileLabel.getStyleClass().add("muted-label");
+        cookieGrid.addRow(0, cookieBrowserLabel, cookieBrowserField);
+        cookieGrid.addRow(1, cookieProfileLabel, cookieProfileField);
+        cookieGrid.getStyleClass().add("settings-grid");
+
+        VBox cookiesSection = new VBox(8, cookiesHeading, cookiesSubtitle, useBrowserCookiesCheck, cookieGrid);
+        cookiesSection.getStyleClass().add("settings-section");
+
+        VBox content = new VBox(14, heading, subtitle, windowSection, cookiesSection, ytDlpBox, denoBox, errorLabel);
         content.getStyleClass().add("dialog-content");
         content.setPadding(new Insets(8, 6, 6, 6));
 
@@ -486,10 +523,22 @@ public class HelloApplication extends Application {
                 return;
             }
 
+            boolean useCookies = useBrowserCookiesCheck.isSelected();
+            String cookieBrowserInput = cookieBrowserField.getText() == null ? "" : cookieBrowserField.getText().trim();
+            String cookieProfileInput = cookieProfileField.getText() == null ? "" : cookieProfileField.getText().trim();
+            if (useCookies && cookieBrowserInput.isEmpty()) {
+                errorLabel.setText("ブラウザ名を入力してください。");
+                event.consume();
+                return;
+            }
+
             errorLabel.setText("");
             settings.setWindowWidth(width);
             settings.setWindowHeight(height);
             settings.setDownloadDirectory(dir.getAbsolutePath());
+            settings.setUseBrowserCookies(useCookies);
+            settings.setCookiesBrowser(cookieBrowserInput);
+            settings.setCookiesProfile(cookieProfileInput);
             settings.save();
             downloadsManager.ensureDownloadDirectory();
             refreshFileList();
