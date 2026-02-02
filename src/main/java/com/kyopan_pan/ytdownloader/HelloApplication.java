@@ -1,5 +1,10 @@
 package com.kyopan_pan.ytdownloader;
 
+import java.io.File;
+import java.net.URL;
+import java.time.Duration;
+import java.util.Collections;
+
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.collections.ListChangeListener;
@@ -8,18 +13,36 @@ import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
-import javafx.scene.control.*;
-import javafx.scene.input.*;
-import javafx.scene.layout.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
+import javafx.scene.control.ListView;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuBar;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.TextField;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
+import javafx.scene.input.TransferMode;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.shape.SVGPath;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
-
-import java.io.File;
-import java.net.URL;
-import java.time.Duration;
-import java.util.Collections;
 
 public class HelloApplication extends Application {
 
@@ -28,9 +51,7 @@ public class HelloApplication extends Application {
     private final DownloadsManager downloadsManager = new DownloadsManager();
     private final DependencyManager dependencyManager = new DependencyManager();
     private DownloadExecutor downloadExecutor;
-    private TextField urlInput;
     private Button downloadBtn;
-    private SVGPath downloadIcon;
     private SVGPath stopIcon;
     private SVGPath successIcon;
     private ListView<File> fileListView;
@@ -54,20 +75,11 @@ public class HelloApplication extends Application {
         // 本来はスプラッシュスクリーン等で待機させるべきですが、簡易的にここで呼び出します
         new Thread(dependencyManager::ensureBinaries).start();
 
-        urlInput = new TextField();
-        urlInput.setPromptText("YouTube URL...");
-        urlInput.getStyleClass().add("url-input");
-
-        downloadIcon = IconFactory.createDownloadIcon();
         stopIcon = IconFactory.createStopIcon();
         successIcon = IconFactory.createSuccessIcon();
 
-        downloadBtn = buildDownloadButton(downloadIcon);
+        downloadBtn = buildDownloadButton();
         MenuBar menuBar = buildMenuBar();
-
-        HBox inputRow = new HBox(12, urlInput, downloadBtn);
-        inputRow.getStyleClass().add("input-row");
-        HBox.setHgrow(urlInput, Priority.ALWAYS);
 
         buildProgressArea();
 
@@ -77,7 +89,7 @@ public class HelloApplication extends Application {
         Label downloadsLabel = new Label("Downloads");
         downloadsLabel.getStyleClass().add("section-title");
 
-        VBox mainContent = new VBox(14, inputRow, progressBox, downloadsLabel, fileListView);
+        VBox mainContent = new VBox(14, downloadBtn, progressBox, downloadsLabel, fileListView);
         mainContent.getStyleClass().add("app");
         mainContent.setPadding(new Insets(16));
         VBox.setVgrow(fileListView, Priority.ALWAYS);
@@ -87,12 +99,7 @@ public class HelloApplication extends Application {
         root.setCenter(mainContent);
 
         downloadExecutor = new DownloadExecutor(this::handleProgressUpdate);
-        downloadBtn.setOnAction(e -> handleDownload(urlInput));
-        urlInput.textProperty().addListener((obs, oldValue, newValue) -> {
-            if (!downloadExecutor.isDownloadActive()) {
-                resetDownloadButton();
-            }
-        });
+        downloadBtn.setOnAction(e -> handleDownload());
 
         Scene scene = new Scene(root, settings.getWindowWidth(), settings.getWindowHeight());
         URL stylesheet = getClass().getResource("styles.css");
@@ -124,15 +131,14 @@ public class HelloApplication extends Application {
         stage.setY(Math.max(bounds.getMinY(), y));
     }
 
-    private Button buildDownloadButton(SVGPath downloadIcon) {
-        Button downloadBtn = new Button();
-        downloadBtn.setAccessibleText("Download");
-        downloadBtn.setGraphic(downloadIcon);
-        downloadBtn.getStyleClass().add("download-btn");
-        downloadBtn.setPrefWidth(56);
-        downloadBtn.setPrefHeight(48);
-        downloadBtn.setMinHeight(48);
-        return downloadBtn;
+    private Button buildDownloadButton() {
+        Button btn = new Button("Download");
+        btn.setAccessibleText("Download");
+        btn.getStyleClass().add("download-btn");
+        btn.setPrefHeight(48);
+        btn.setMinHeight(48);
+        btn.setMaxWidth(Double.MAX_VALUE);
+        return btn;
     }
 
     private MenuBar buildMenuBar() {
@@ -193,25 +199,33 @@ public class HelloApplication extends Application {
         progressBox.getStyleClass().addAll("progress-box", "idle");
     }
 
-    private void handleDownload(TextField urlInput) {
+    private void handleDownload() {
         if (downloadExecutor.isDownloadActive()) {
             downloadExecutor.stopDownload(downloadBtn);
             return;
         }
-        String url = urlInput.getText();
+        String url = getUrlFromClipboard();
         if (url != null && !url.isEmpty()) {
             if (!ensureYtDlpConfigured()) {
                 return;
             }
-            downloadExecutor.download(url, downloadBtn, downloadIcon, stopIcon, successIcon, this::refreshFileList);
-            urlInput.clear();
+            downloadExecutor.download(url, downloadBtn, null, stopIcon, successIcon, this::refreshFileList);
         }
+    }
+
+    private String getUrlFromClipboard() {
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (clipboard.hasString()) {
+            return clipboard.getString().trim();
+        }
+        return null;
     }
 
     private void resetDownloadButton() {
         downloadBtn.setDisable(false);
         downloadBtn.getStyleClass().removeAll("busy", "stop", "success", "error");
-        downloadBtn.setGraphic(downloadIcon);
+        downloadBtn.setGraphic(null);
+        downloadBtn.setText("Download");
         downloadBtn.setAccessibleText("Download");
     }
 
