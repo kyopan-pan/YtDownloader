@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
- * 指定フォルダ内で動画ファイルをファイル名およびメタ情報（ffprobe の title 等）で検索する。
+ * 指定フォルダ内で動画ファイルをファイル名およびメタ情報（ffprobe の format_tags）で検索する。
  */
 public final class MediaSearchManager {
 
@@ -25,7 +25,7 @@ public final class MediaSearchManager {
     /**
      * 検索対象フォルダが未設定または存在しない場合は空リストを返す。
      * 検索はファイル名の部分一致（大文字小文字無視）と、ffprobe が利用可能な場合は
-     * メタ情報（format_tags title）の部分一致で行う。
+     * メタ情報（format_tags の全項目）の部分一致で行う。
      *
      * @param rootDir  検索ルート（外付けSSD等のパス）
      * @param query    検索文字列（空の場合は空リスト）
@@ -57,15 +57,16 @@ public final class MediaSearchManager {
                     continue;
                 }
                 File file = path.toFile();
-                if (name.toLowerCase(Locale.ROOT).contains(q)) {
+                String nameLower = name.toLowerCase(Locale.ROOT);
+                if (nameLower.contains(q)) {
                     if (!results.contains(file)) {
                         results.add(file);
                     }
                     continue;
                 }
                 if (useFfprobe) {
-                    String title = readTitleWithFfprobe(path.toAbsolutePath().toString());
-                    if (title != null && title.toLowerCase(Locale.ROOT).contains(q)) {
+                    String metadata = readMetadataWithFfprobe(path.toAbsolutePath().toString());
+                    if (metadata != null && metadata.toLowerCase(Locale.ROOT).contains(q)) {
                         if (!results.contains(file)) {
                             results.add(file);
                         }
@@ -94,15 +95,15 @@ public final class MediaSearchManager {
     }
 
     /**
-     * ffprobe で format_tags の title を取得。取得失敗時は null。
+     * ffprobe で format_tags を取得。取得失敗時は null。
      */
-    private static String readTitleWithFfprobe(String filePath) {
+    private static String readMetadataWithFfprobe(String filePath) {
         String ffprobePath = DownloadConfig.getFfprobePath();
         ProcessBuilder pb = new ProcessBuilder(
                 ffprobePath,
                 "-v", "quiet",
-                "-show_entries", "format_tags=title",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-show_entries", "format_tags",
+                "-of", "default=noprint_wrappers=1",
                 filePath
         );
         pb.redirectErrorStream(true);
@@ -110,12 +111,22 @@ public final class MediaSearchManager {
             Process p = pb.start();
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                String line = reader.readLine();
+                StringBuilder metadata = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (!trimmed.isEmpty()) {
+                        if (metadata.length() > 0) {
+                            metadata.append('\n');
+                        }
+                        metadata.append(trimmed);
+                    }
+                }
                 p.waitFor();
-                if (p.exitValue() != 0 || line == null) {
+                if (p.exitValue() != 0 || metadata.length() == 0) {
                     return null;
                 }
-                return line.trim();
+                return metadata.toString();
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -124,4 +135,5 @@ public final class MediaSearchManager {
             return null;
         }
     }
+
 }

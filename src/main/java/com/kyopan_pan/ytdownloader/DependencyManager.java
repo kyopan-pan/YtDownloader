@@ -54,6 +54,19 @@ public class DependencyManager {
                 AppLogger.log("[DependencyManager] ffmpeg already present: " + ffmpeg.getAbsolutePath());
             }
 
+            // 2.5 ffprobe の準備 (リソースからコピー)
+            File ffprobe = new File(DownloadConfig.getFfprobePath());
+            if (!ffprobe.exists()) {
+                AppLogger.log("[DependencyManager] ffprobe not found. Extracting to " + ffprobe.getAbsolutePath());
+                copyFfprobeFromResources(ffprobe);
+            } else if (!ffprobe.canExecute()) {
+                AppLogger.log("[DependencyManager] ffprobe found but not executable. Re-applying permission...");
+                makeExecutable(ffprobe.toPath());
+                AppLogger.log("[DependencyManager] ffprobe permission refreshed.");
+            } else {
+                AppLogger.log("[DependencyManager] ffprobe already present: " + ffprobe.getAbsolutePath());
+            }
+
             // 3. Deno の準備
             File deno = new File(DownloadConfig.getDenoPath());
             if (!deno.exists()) {
@@ -121,6 +134,11 @@ public class DependencyManager {
             if (!ffmpeg.exists() || !ffmpeg.canExecute()) {
                 AppLogger.log("[DependencyManager] ffmpeg missing or invalid during update. Restoring...");
                 copyFfmpegFromResources(ffmpeg);
+            }
+            File ffprobe = new File(DownloadConfig.getFfprobePath());
+            if (!ffprobe.exists() || !ffprobe.canExecute()) {
+                AppLogger.log("[DependencyManager] ffprobe missing or invalid during update. Restoring...");
+                copyFfprobeFromResources(ffprobe);
             }
             // ============================================
 
@@ -297,6 +315,19 @@ public class DependencyManager {
             Files.copy(in, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
             makeExecutable(destination.toPath());
             AppLogger.log("[DependencyManager] ffmpeg ready: " + destination.getAbsolutePath());
+        }
+    }
+
+    private void copyFfprobeFromResources(File destination) throws IOException {
+        // src/main/resources/bin/ffprobe を参照します
+        AppLogger.log("[DependencyManager] Copying bundled ffprobe to " + destination.getAbsolutePath());
+        try (InputStream in = getClass().getResourceAsStream("/bin/ffprobe")) {
+            if (in == null) {
+                throw new FileNotFoundException("ffprobe binary not found in resources! Please put 'ffprobe' in src/main/resources/bin/");
+            }
+            Files.copy(in, destination.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            makeExecutable(destination.toPath());
+            AppLogger.log("[DependencyManager] ffprobe ready: " + destination.getAbsolutePath());
         }
     }
 
