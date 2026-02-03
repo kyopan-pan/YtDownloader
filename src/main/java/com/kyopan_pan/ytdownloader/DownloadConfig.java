@@ -10,6 +10,7 @@ public final class DownloadConfig {
 
     private static final String DEFAULT_DOWNLOAD_DIR = System.getProperty("user.home") + "/Movies/YtDlpDownloads";
     private static String downloadDir = DEFAULT_DOWNLOAD_DIR;
+    private static String searchDir = "";
     private static boolean useBrowserCookies = false;
     private static String cookiesBrowser = "";
     private static String cookiesProfile = "";
@@ -37,6 +38,22 @@ public final class DownloadConfig {
             return;
         }
         downloadDir = new File(newDir).getAbsolutePath();
+    }
+
+    public static synchronized String getSearchDir() {
+        return searchDir == null ? "" : searchDir;
+    }
+
+    public static synchronized void setSearchDir(String newDir) {
+        if (newDir == null || newDir.isBlank()) {
+            searchDir = "";
+            return;
+        }
+        searchDir = new File(newDir).getAbsolutePath();
+    }
+
+    public static String getFfprobePath() {
+        return new File(BIN_DIR, "ffprobe").getAbsolutePath();
     }
 
     public static synchronized boolean isUseBrowserCookies() {

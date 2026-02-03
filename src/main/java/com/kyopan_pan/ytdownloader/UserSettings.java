@@ -19,15 +19,17 @@ public final class UserSettings {
     private double windowWidth;
     private double windowHeight;
     private String downloadDirectory;
+    private String searchDirectory;
     private boolean useBrowserCookies;
     private String cookiesBrowser;
     private String cookiesProfile;
 
     private UserSettings(double windowWidth, double windowHeight, String downloadDirectory,
-                         boolean useBrowserCookies, String cookiesBrowser, String cookiesProfile) {
+                         String searchDirectory, boolean useBrowserCookies, String cookiesBrowser, String cookiesProfile) {
         this.windowWidth = windowWidth;
         this.windowHeight = windowHeight;
         this.downloadDirectory = downloadDirectory;
+        this.searchDirectory = searchDirectory;
         this.useBrowserCookies = useBrowserCookies;
         this.cookiesBrowser = cookiesBrowser;
         this.cookiesProfile = cookiesProfile;
@@ -46,14 +48,16 @@ public final class UserSettings {
         double width = parseDimension(props.getProperty("window.width"), DEFAULT_WIDTH, MIN_WIDTH);
         double height = parseDimension(props.getProperty("window.height"), DEFAULT_HEIGHT, MIN_HEIGHT);
         String dir = normalizeDir(props.getProperty("download.dir", DownloadConfig.getDefaultDownloadDir()));
+        String searchDir = normalizeSearchDir(props.getProperty("search.dir"));
         boolean useCookies = parseBoolean(props.getProperty("cookies.from_browser.enabled"), false);
         String cookieBrowser = normalizeValue(props.getProperty("cookies.from_browser.browser"));
         String cookieProfile = normalizeValue(props.getProperty("cookies.from_browser.profile"));
         DownloadConfig.setDownloadDir(dir);
+        DownloadConfig.setSearchDir(searchDir);
         DownloadConfig.setUseBrowserCookies(useCookies);
         DownloadConfig.setCookiesBrowser(cookieBrowser);
         DownloadConfig.setCookiesProfile(cookieProfile);
-        return new UserSettings(width, height, dir, useCookies, cookieBrowser, cookieProfile);
+        return new UserSettings(width, height, dir, searchDir, useCookies, cookieBrowser, cookieProfile);
     }
 
     public void save() {
@@ -61,6 +65,7 @@ public final class UserSettings {
         props.setProperty("window.width", String.valueOf(windowWidth));
         props.setProperty("window.height", String.valueOf(windowHeight));
         props.setProperty("download.dir", downloadDirectory);
+        props.setProperty("search.dir", nullToEmpty(searchDirectory));
         props.setProperty("cookies.from_browser.enabled", String.valueOf(useBrowserCookies));
         props.setProperty("cookies.from_browser.browser", nullToEmpty(cookiesBrowser));
         props.setProperty("cookies.from_browser.profile", nullToEmpty(cookiesProfile));
@@ -99,6 +104,15 @@ public final class UserSettings {
     public void setDownloadDirectory(String downloadDirectory) {
         this.downloadDirectory = normalizeDir(downloadDirectory);
         DownloadConfig.setDownloadDir(this.downloadDirectory);
+    }
+
+    public String getSearchDirectory() {
+        return searchDirectory == null ? "" : searchDirectory;
+    }
+
+    public void setSearchDirectory(String searchDirectory) {
+        this.searchDirectory = normalizeSearchDir(searchDirectory);
+        DownloadConfig.setSearchDir(this.searchDirectory);
     }
 
     public boolean isUseBrowserCookies() {
@@ -147,6 +161,13 @@ public final class UserSettings {
     private static String normalizeDir(String dir) {
         if (dir == null || dir.isBlank()) {
             return DownloadConfig.getDefaultDownloadDir();
+        }
+        return Paths.get(dir.trim()).toAbsolutePath().toString();
+    }
+
+    private static String normalizeSearchDir(String dir) {
+        if (dir == null || dir.isBlank()) {
+            return "";
         }
         return Paths.get(dir.trim()).toAbsolutePath().toString();
     }

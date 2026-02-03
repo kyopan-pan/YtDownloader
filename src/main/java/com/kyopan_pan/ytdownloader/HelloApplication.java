@@ -4,11 +4,18 @@ import java.io.File;
 import java.net.URL;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
@@ -25,6 +32,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -56,6 +64,13 @@ public class HelloApplication extends Application {
     private SVGPath stopIcon;
     private SVGPath successIcon;
     private ListView<File> fileListView;
+    private ListView<File> searchResultsListView;
+    private Label searchStatusLabel;
+    private final ObservableList<File> searchResults = FXCollections.observableArrayList();
+    private final MediaSearchManager mediaSearchManager = new MediaSearchManager();
+    private final AtomicReference<AtomicBoolean> searchCancelRef =
+            new AtomicReference<>(new AtomicBoolean(false));
+    private PauseTransition searchDebounce;
     private VBox progressBox;
     private Label progressLabel;
     private ProgressBar progressBar;
@@ -90,14 +105,40 @@ public class HelloApplication extends Application {
         Label downloadsLabel = new Label("Downloads");
         downloadsLabel.getStyleClass().add("section-title");
 
-        VBox mainContent = new VBox(14, downloadBtn, progressBox, downloadsLabel, fileListView);
-        mainContent.getStyleClass().add("app");
-        mainContent.setPadding(new Insets(16));
+        VBox downloadSection = new VBox(14, downloadBtn, progressBox, downloadsLabel, fileListView);
+        downloadSection.getStyleClass().add("app");
+        downloadSection.setPadding(new Insets(16));
         VBox.setVgrow(fileListView, Priority.ALWAYS);
+
+        Label searchLabel = new Label("Search");
+        searchLabel.getStyleClass().add("section-title");
+        TextField searchField = new TextField();
+        searchField.getStyleClass().add("url-input");
+        searchField.setPromptText("ファイル名またはメタ情報で検索...");
+        searchField.setMaxWidth(Double.MAX_VALUE);
+
+        searchStatusLabel = new Label();
+        searchStatusLabel.getStyleClass().add("muted-label");
+        searchStatusLabel.setWrapText(true);
+        updateSearchStatusLabel();
+
+        searchResultsListView = buildSearchResultsList();
+        searchResultsListView.setItems(searchResults);
+
+        setupAutoSearch(searchField);
+
+        VBox searchSection = new VBox(14, searchLabel, searchField, searchStatusLabel, searchResultsListView);
+        searchSection.getStyleClass().add("app");
+        searchSection.setPadding(new Insets(16));
+        VBox.setVgrow(searchResultsListView, Priority.ALWAYS);
+
+        SplitPane splitPane = new SplitPane(downloadSection, searchSection);
+        splitPane.setOrientation(Orientation.HORIZONTAL);
+        splitPane.setDividerPositions(0.5);
 
         BorderPane root = new BorderPane();
         root.setTop(menuBar);
-        root.setCenter(mainContent);
+        root.setCenter(splitPane);
 
         downloadExecutor = new DownloadExecutor(this::handleProgressUpdate);
         downloadBtn.setOnAction(e -> handleDownload());
@@ -186,6 +227,93 @@ public class HelloApplication extends Application {
 
         listView.setCellFactory(param -> new DownloadListCell(this::handleDelete));
         return listView;
+    }
+
+    private ListView<File> buildSearchResultsList() {
+        ListView<File> listView = new ListView<>();
+        listView.getStyleClass().add("downloads-list");
+        listView.getStyleClass().add("search-results-list");
+        ScrollUtil.disableHorizontalScroll(listView);
+
+        listView.setOnDragDetected(event -> {
+            File selectedFile = listView.getSelectionModel().getSelectedItem();
+            if (selectedFile != null) {
+                Dragboard db = listView.startDragAndDrop(TransferMode.COPY);
+                ClipboardContent content = new ClipboardContent();
+                content.putFiles(Collections.singletonList(selectedFile));
+                db.setContent(content);
+                event.consume();
+            }
+        });
+
+        listView.setCellFactory(param -> new SearchResultListCell());
+        return listView;
+    }
+
+    private void setupAutoSearch(TextField searchField) {
+        searchDebounce = new PauseTransition(javafx.util.Duration.millis(500));
+        searchDebounce.setOnFinished(event -> {
+            String query = searchField.getText();
+            runSearch(query);
+        });
+
+        searchField.textProperty().addListener((observable, oldValue, newValue) -> {
+            if (searchDebounce != null) {
+                searchDebounce.stop();
+            }
+            if (newValue == null || newValue.isBlank()) {
+                cancelCurrentSearch();
+                searchResults.clear();
+                return;
+            }
+            searchDebounce.playFromStart();
+        });
+    }
+
+    private void runSearch(String query) {
+        String searchDir = DownloadConfig.getSearchDir();
+        if (searchDir == null || searchDir.isBlank()) {
+            cancelCurrentSearch();
+            AppLogger.log("[HelloApplication] Search folder not set. Open Settings to set search directory.");
+            return;
+        }
+        if (query == null || query.isBlank()) {
+            cancelCurrentSearch();
+            searchResults.clear();
+            return;
+        }
+        AtomicBoolean cancelToken = new AtomicBoolean(false);
+        AtomicBoolean previous = searchCancelRef.getAndSet(cancelToken);
+        previous.set(true);
+        searchResults.clear();
+
+        Thread searchThread = new Thread(() -> {
+            List<File> found = mediaSearchManager.search(searchDir, query, cancelToken);
+            Platform.runLater(() -> {
+                if (searchCancelRef.get() == cancelToken && !cancelToken.get()) {
+                    searchResults.setAll(found);
+                }
+            });
+        });
+        searchThread.setDaemon(true);
+        searchThread.start();
+    }
+
+    private void cancelCurrentSearch() {
+        AtomicBoolean current = searchCancelRef.get();
+        current.set(true);
+    }
+
+    private void updateSearchStatusLabel() {
+        if (searchStatusLabel == null) {
+            return;
+        }
+        String searchDir = DownloadConfig.getSearchDir();
+        if (searchDir == null || searchDir.isBlank()) {
+            searchStatusLabel.setText("設定で検索対象フォルダ（外付けSSD等）を指定してください。");
+        } else {
+            searchStatusLabel.setText("検索対象: " + searchDir);
+        }
     }
 
     private void buildProgressArea() {
@@ -379,6 +507,10 @@ public class HelloApplication extends Application {
         TextField widthField = new TextField(String.valueOf((int) Math.round(settings.getWindowWidth())));
         TextField heightField = new TextField(String.valueOf((int) Math.round(settings.getWindowHeight())));
         TextField outputField = new TextField(settings.getDownloadDirectory());
+        TextField searchDirField = new TextField(settings.getSearchDirectory());
+        searchDirField.setPromptText("例: /Volumes/SSD/Movies");
+        searchDirField.getStyleClass().add("settings-field");
+        searchDirField.setPrefColumnCount(22);
         CheckBox useBrowserCookiesCheck = new CheckBox("ブラウザのクッキーを使う（bot確認対策）");
         TextField cookieBrowserField = new TextField(settings.getCookiesBrowser());
         TextField cookieProfileField = new TextField(settings.getCookiesProfile());
@@ -411,6 +543,23 @@ public class HelloApplication extends Application {
             File selected = chooser.showDialog(primaryStage);
             if (selected != null) {
                 outputField.setText(selected.getAbsolutePath());
+            }
+        });
+
+        Button searchDirBrowseBtn = new Button("フォルダを選択");
+        searchDirBrowseBtn.getStyleClass().add("ghost-btn");
+        searchDirBrowseBtn.setOnAction(event -> {
+            DirectoryChooser chooser = new DirectoryChooser();
+            String searchDirText = searchDirField.getText();
+            if (searchDirText != null && !searchDirText.isBlank()) {
+                File current = new File(searchDirText);
+                if (current.exists()) {
+                    chooser.setInitialDirectory(current);
+                }
+            }
+            File selected = chooser.showDialog(primaryStage);
+            if (selected != null) {
+                searchDirField.setText(selected.getAbsolutePath());
             }
         });
 
@@ -459,15 +608,21 @@ public class HelloApplication extends Application {
         Label widthLabel = new Label("画面幅");
         Label heightLabel = new Label("画面高さ");
         Label folderLabel = new Label("出力先フォルダ");
+        Label searchFolderLabel = new Label("検索対象フォルダ");
         widthLabel.getStyleClass().add("muted-label");
         heightLabel.getStyleClass().add("muted-label");
         folderLabel.getStyleClass().add("muted-label");
+        searchFolderLabel.getStyleClass().add("muted-label");
         grid.addRow(0, widthLabel, widthField);
         grid.addRow(1, heightLabel, heightField);
         grid.add(folderLabel, 0, 2);
         HBox outputRow = new HBox(8, outputField, browseBtn);
         outputRow.setAlignment(Pos.CENTER_LEFT);
         grid.add(outputRow, 1, 2);
+        grid.add(searchFolderLabel, 0, 3);
+        HBox searchDirRow = new HBox(8, searchDirField, searchDirBrowseBtn);
+        searchDirRow.setAlignment(Pos.CENTER_LEFT);
+        grid.add(searchDirRow, 1, 3);
         grid.getStyleClass().add("settings-grid");
 
         Label heading = new Label("アプリ設定");
@@ -532,16 +687,19 @@ public class HelloApplication extends Application {
                 return;
             }
 
+            String searchDirInput = searchDirField.getText() == null ? "" : searchDirField.getText().trim();
             errorLabel.setText("");
             settings.setWindowWidth(width);
             settings.setWindowHeight(height);
             settings.setDownloadDirectory(dir.getAbsolutePath());
+            settings.setSearchDirectory(searchDirInput);
             settings.setUseBrowserCookies(useCookies);
             settings.setCookiesBrowser(cookieBrowserInput);
             settings.setCookiesProfile(cookieProfileInput);
             settings.save();
             downloadsManager.ensureDownloadDirectory();
             refreshFileList();
+            updateSearchStatusLabel();
             primaryStage.setWidth(settings.getWindowWidth());
             primaryStage.setHeight(settings.getWindowHeight());
         });
